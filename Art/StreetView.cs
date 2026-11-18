@@ -800,9 +800,35 @@ public partial class StreetView : Control
                 ToyArt.Draw(this, customer.Wanted, mark + new Vector2(17, 10), .68f);
             }
         }
+        if (inside && customer.Phase == VisitPhase.Leave && customer.Result != 0)
+            DrawEmote(p - new Vector2(0, 70 * scale), customer);
         if (inside)
             hits.Add((new Rect2(p.X - 17 * scale, p.Y - 57 * scale, 34 * scale, 60 * scale), customer));
         sceneTint = roomLight;
+    }
+
+    private void DrawEmote(Vector2 at, Customer customer)
+    {
+        bool happy = customer.Result == 1 && customer.Mood > 0;
+        bool angry = customer.Mood < 0;
+        Color fill = ToyArt.C(happy ? "f7d7d2" : angry ? "f3c9a8" : "f5e2b5");
+        float radius = 12 * scale;
+        DrawCircle(at, radius + 1.5f, ToyArt.C("3a5d4f"), antialiased: true);
+        DrawCircle(at, radius, fill, antialiased: true);
+        if (happy)
+        {
+            Color heart = ToyArt.C("c95d62");
+            DrawCircle(at + new Vector2(-3.4f, -2) * scale, 3.8f * scale, heart, antialiased: true);
+            DrawCircle(at + new Vector2(3.4f, -2) * scale, 3.8f * scale, heart, antialiased: true);
+            DrawColoredPolygon([at + new Vector2(-7.2f, -.6f) * scale, at + new Vector2(7.2f, -.6f) * scale,
+                at + new Vector2(0, 8) * scale], heart);
+            return;
+        }
+
+        string glyph = customer.Result == 1 ? (angry ? "!" : "✓") : angry ? "?" : "…";
+        Font font = ThemeDB.FallbackFont;
+        int size = (int)(17 * scale);
+        DrawString(font, at + new Vector2(-4.5f * scale, 6 * scale), glyph, fontSize: size, modulate: ToyArt.C("3a5d4f"));
     }
 
     private void Figure(float x, float y, int style, int direction, int frame, string? actionSprite = null)

@@ -32,6 +32,8 @@ public partial class ShopGame
         }
 
         Header("Shop layout", "");
+        if (!placing.HasValue && selectedDisplay == null)
+            Briefing();
         if (placing.HasValue)
             AddButton("Cancel", CancelPlacement);
 
@@ -182,7 +184,13 @@ public partial class ShopGame
 
     private void TownPanel()
     {
-        Header("Town orders", "");
+        Header("Town", "");
+        TownTabs();
+        if (townTab == 1)
+        {
+            StandingPanel();
+            return;
+        }
         CartUpgrade();
         Contract(Catalog.Fairs[state.Season], state.CommissionToy, state.CommissionCount, state.CommissionPay,
             () => state.Commissions[state.Season], () => state.Deliver());

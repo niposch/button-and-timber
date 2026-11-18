@@ -88,7 +88,7 @@ internal sealed partial class Customer
     public int Wanted { get; set; }
     public int Budget { get; set; }
     public int Result { get; set; }
-    public string Name => Names[Appearance % Names.Length];
+    public string Name => Alias ?? Names[Appearance % Names.Length];
     private static readonly string[] Names =
         ["Elsie", "Milo", "Ada", "Nico", "June", "Ollie", "Bea", "Robin", "Kit", "Nell", "Sam", "Lou"];
 }
@@ -102,6 +102,8 @@ internal sealed class Till
     public int Spent { get; set; }
     public int OtherIncome { get; set; }
     public int Missed { get; set; }
+    public int Bargains { get; set; }
+    public int Gouged { get; set; }
     public int[] Requests { get; set; } = new int[Catalog.Toys.Length];
     public int Net => Revenue + OtherIncome - Spent;
 }
@@ -155,9 +157,11 @@ internal sealed partial class ShopState
     public int Width => Expanded ? 9 : 7;
     public int StockOnDisplay(int toy) => Displays.Where(display => display.Toy == toy).Sum(display => display.Count);
     private static readonly int[] LevelExperience = [0, 4, 12, 23, 38];
-    public int ToyCost(int toy) => Math.Max(2, (int)Math.Round(Catalog.Toys[toy].Materials * (1 - (Level(toy) - 1) * .09)));
+    public int ToyCost(int toy) => Math.Max(2, (int)Math.Round(Catalog.Toys[toy].Materials * (1 - (Level(toy) - 1) * .09) *
+        (Style == Philosophy.Volume ? .82 : 1) * (Event == DayEvent.SupplierSale ? .75 : 1)));
     public int Level(int toy) => Array.FindLastIndex(LevelExperience, xp => Practice[toy] >= xp) + 1;
-    public int Yield(int toy) => Math.Min(99, Catalog.Toys[toy].BaseYield + (Level(toy) - 1) * 8);
+    public int Yield(int toy) => Math.Min(99, Catalog.Toys[toy].BaseYield + (Level(toy) - 1) * 8 +
+        (Style == Philosophy.Heirloom && Catalog.Toys[toy].Tier >= 3 ? 4 : 0));
     public double MasteryProgress(int toy)
     {
         int level = Level(toy);
@@ -171,7 +175,7 @@ internal sealed partial class ShopState
     public bool CanResearch(int toy)
     {
         Toy recipe = Catalog.Toys[toy];
-        return MeetsPrerequisite(toy) && Cash >= recipe.Research;
+        return MeetsPrerequisite(toy) && recipe.Tier <= MaxTier && Cash >= recipe.Research;
     }
 
     public bool MeetsPrerequisite(int toy)
@@ -188,7 +192,8 @@ internal sealed partial class ShopState
 
         Spend(Catalog.Toys[toy].Research);
         Unlocked[toy] = true;
-        Note($"Pattern learned · {Catalog.Toys[toy].Name}");
+        Announce($"Pattern learned · {Catalog.Toys[toy].Name}");
+        GainRenown(5 + Catalog.Toys[toy].Tier * 2);
         return true;
     }
 
@@ -256,6 +261,7 @@ internal sealed partial class ShopState
         Cash += CommissionPay;
         Today.OtherIncome += CommissionPay;
         Reputation = Math.Min(100, Reputation + 6);
+        GainRenown(12);
         Commissions[Season] = true;
         Note($"Town order delivered · ${CommissionPay}");
         return true;
@@ -288,16 +294,25 @@ internal sealed partial class ShopState
         Customers.Clear();
         Replenish();
         Spend(DailyRent);
+        if (Wages > 0)
+            Spend(Wages);
         if (Today.Visitors > 0)
         {
             int change = (int)Math.Round((double)(Today.CustomersServed - Today.Missed) / Today.Visitors * 8);
-            Reputation = Math.Clamp(Reputation + change + Math.Min(2, Appeal / 3), 15, 100);
+            int pricing = Math.Clamp((Today.Bargains - 2 * Today.Gouged) * 3 / Math.Max(1, Today.CustomersServed), -4, 3);
+            Reputation = Math.Clamp(Reputation + change + pricing + Math.Min(2, Appeal / 3), 15, 100);
         }
+        GainRenown(Reputation / 12 + Today.CustomersServed / 2);
 
-        if (Day == CampaignDays)
+        if (LastDayOfYear)
         {
             DeedSavings = Cash;
-            CampaignResult = Cash >= Goal ? 1 : -1;
+            CampaignResult = Cash >= YearTarget ? 1 : -1;
+            if (CampaignResult == 1)
+            {
+                Announce(Year == 1 ? "The shop deed is yours" : $"Year {Year} target met");
+                GainRenown(40 + Year * 10);
+            }
         }
 
         Shift = Shift.Closed;
@@ -314,6 +329,7 @@ internal sealed partial class ShopState
         {
             Commissions = new bool[4];
             SideOrders = new int[4];
+            YearStartCash = Cash;
         }
 
         Yesterday = Today;
@@ -321,6 +337,10 @@ internal sealed partial class ShopState
         Minute = 0;
         Shift = Shift.Setup;
         Note(Fair ? $"{Catalog.Fairs[Season]} is on today" : "A new day on Alder Lane");
+        RollEvent();
+        foreach (Regular regular in Regulars)
+            if (regular.LastVisitDay < Day - 6)
+                regular.Affinity = Math.Max(0, regular.Affinity - 1);
     }
 
     public void Note(string text)

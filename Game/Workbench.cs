@@ -145,7 +145,7 @@ internal sealed partial class ShopState
                 seconds -= elapsed;
                 continue;
             }
-            if (!atBench && NeedsHands(order))
+            if (!atBench && NeedsHands(order) && !Hired[(int)StaffRole.Apprentice])
                 return;
 
             double window = ToolWindow(order);
@@ -221,6 +221,7 @@ internal sealed partial class ShopState
                 if (passed > 0)
                     LastBenchCue = BenchCue.LevelUp;
                 Note($"{ProjectName(order)} reached Lv {Level(order.Toy)}");
+                GainRenown(3 + Catalog.Toys[order.Toy].Tier);
             }
         }
 

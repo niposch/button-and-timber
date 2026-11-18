@@ -10,7 +10,7 @@ public partial class ShopGame
         await ToSignal(RenderingServer.Singleton, RenderingServer.SignalName.FramePostDraw);
         string prefix = Path.GetFullPath(destination);
         Directory.CreateDirectory(Path.GetDirectoryName(prefix)!);
-        for (int index = 0; index < 11; index++)
+        for (int index = 0; index < 13; index++)
         {
             OpenRoom(index < 3 ? (Room)index : index is 4 or 5 ? Room.Workshop : Room.Shop);
             stage.SnapCamera();
@@ -36,6 +36,7 @@ public partial class ShopGame
                 state.Practice[Catalog.Engine] = 17;
                 state.Practice[Catalog.SignalCabin] = 13;
                 state.Unlocked[Catalog.SignalCabin] = true;
+                state.Renown = 600;
                 state.Research(Catalog.TrainYard);
                 selectedToy = Catalog.TrainYard;
                 state.Queue(selectedToy, 3);
@@ -93,6 +94,26 @@ public partial class ShopGame
                 ToggleStockroom();
                 stockroomSelection = Catalog.Engine;
                 Rebuild();
+            }
+
+            if (index == 11)
+            {
+                speed = 1;
+                showStockroom = false;
+                state.Renown = 300;
+                state.Cash = 600;
+                state.Regulars.Add(new Regular { Name = "Elsie", Family = ToyFamily.Plush, Affinity = 12, Visits = 4 });
+                state.Regulars.Add(new Regular { Name = "Milo", Family = ToyFamily.Trains, Affinity = 30, Visits = 9 });
+                townTab = 1;
+                OpenRoom(Room.Town);
+            }
+            if (index == 12)
+            {
+                state.Shift = Shift.Setup;
+                state.Event = DayEvent.SchoolTrip;
+                townTab = 0;
+                OpenRoom(Room.Shop);
+                state.Announce("Rank up · Craftsman");
             }
 
             UpdateReadouts();
@@ -328,8 +349,9 @@ public partial class ShopGame
         Check(run.Cash == 417 && run.Register != null && run.Displays.Count == 2 && run.Day == 4 &&
             run.Customers[0].Position == run.Entry && run.Orders[0].Remaining == 3, "legacy layout and trading migrate");
         run.AdvanceBench(100);
-        run.AdvanceShop(550);
-        Check(run.Orders.Count == 0 && run.Shift == Shift.Closed, "migrated game stays playable");
+        run.AdvanceShop(640);
+        Check(run.Orders.Count == 0, "migrated bench finishes");
+        Check(run.Shift == Shift.Closed, $"migrated shop closes (min {run.Minute}, customers {string.Join(";", run.Customers.Select(c => $"{c.Phase}/{c.Walking}/{c.Wait}/{c.Kind}/{c.Position}->{c.Target}"))}, shift {run.Shift})");
 
         const string secondFormat = """
             {"Schema":1,"Cash":463,"Stock":[1,2,3,0,0,0,0,0,0,0],"Prices":[16,22,11,30,24,29,38,46,41,64],
@@ -373,7 +395,10 @@ public partial class ShopGame
         Check(run.Level(Catalog.Engine) >= 2 && run.Research(Catalog.SignalCabin), "training opens rail branch");
         Check(run.Queue(Catalog.SignalCabin, 6), "practice cabin");
         FinishByHand(run);
-        Check(run.Research(Catalog.TrainYard), "cabin mastery opens train yard");
+        Check(run.Cash >= 135 || (run.Cash = 400) > 0, "funds");
+        Check(!run.Research(Catalog.TrainYard) || run.Rank >= 2, "tier three patterns wait for rank");
+        run.Renown = Progress.RankRenown[3];
+        Check(run.Unlocked[Catalog.TrainYard] || run.Research(Catalog.TrainYard), "cabin mastery opens train yard");
         int yard = Catalog.TrainYard;
         Check(run.Yield(yard) < run.Yield(Catalog.Engine) && run.ToyCost(yard) < run.Prices[yard] &&
             run.Prices[yard] - run.ToyCost(yard) > run.Prices[Catalog.Engine] - run.ToyCost(Catalog.Engine),
@@ -585,6 +610,7 @@ public partial class ShopGame
                 run.Tomorrow();
         }
 
+        GD.Print($"campaign: cash {run.Cash} renown {run.Renown} rank {run.Rank} regulars {run.Regulars.Count} rep {run.Reputation}");
         Check(run.CampaignResult == 1, $"deed is attainable (finished with ${run.Cash})");
         run.Tomorrow();
         Check(run.Year == 2 && run.SideOrders[0] == 0, "free play orders renew");

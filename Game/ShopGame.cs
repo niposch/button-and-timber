@@ -45,6 +45,12 @@ public partial class ShopGame : Control
     private Label cash = null!;
     private Label reputation = null!;
     private Label goal = null!;
+    private Label rankName = null!;
+    private ProgressBar rankMeter = null!;
+    private PanelContainer toast = null!;
+    private Label toastText = null!;
+    private double toastLeft;
+    private AudioStream fanfare = null!;
     private ProgressBar goalProgress = null!;
     private Label daysLeft = null!;
     private Label stageState = null!;
@@ -83,6 +89,7 @@ public partial class ShopGame : Control
         Theme = MakeTheme();
         MakeInterface();
         state.CheckedOut += OnCheckout;
+        state.Announced += ShowToast;
         OpenRoom(Room.Shop);
         if (state.Shift == Shift.Closed)
         {
@@ -100,6 +107,12 @@ public partial class ShopGame : Control
     {
         stepClock += delta;
         benchFeedbackLeft = Math.Max(0, benchFeedbackLeft - delta);
+        if (toastLeft > 0)
+        {
+            toastLeft -= delta;
+            toast.Modulate = new Color(1, 1, 1, (float)Math.Clamp(toastLeft / .6, 0, 1));
+            toast.Visible = toastLeft > 0;
+        }
         if (stepClock < .05)
             return;
 
@@ -289,6 +302,10 @@ public partial class ShopGame : Control
         stats.AddChild(Block(100, cash, TextLabel("Cash", 13, Light)));
         reputation = TextLabel("", 21, Light, true);
         stats.AddChild(Block(116, reputation, TextLabel("Reputation", 13, Light)));
+        rankName = TextLabel("", 17, Light, true);
+        rankMeter = Meter(7, true);
+        rankMeter.CustomMinimumSize = new Vector2(120, 7);
+        stats.AddChild(Block(130, rankName, rankMeter, TextLabel("Rank", 13, Light)));
         goal = TextLabel("", 15, Cream);
         goalProgress = Meter(9, true);
         goalProgress.CustomMinimumSize = new Vector2(190, 9);
@@ -402,6 +419,16 @@ public partial class ShopGame : Control
         hint = TextLabel("", 15, ToyArt.C("273f36"));
         host.AddChild(hint);
         AnchorTo(hint, LayoutPreset.BottomWide, 20, -38, -20, -8);
+        toast = Frame("2e433d", "d9bd87", 8, 18, 9);
+        toast.Visible = false;
+        toast.MouseFilter = MouseFilterEnum.Ignore;
+        toastText = TextLabel("", 17, Light, true);
+        toastText.TextOverrunBehavior = TextServer.OverrunBehavior.NoTrimming;
+        toast.AddChild(toastText);
+        host.AddChild(toast);
+        toast.SetAnchorsPreset(LayoutPreset.CenterTop);
+        toast.GrowHorizontal = GrowDirection.Both;
+        toast.OffsetTop = 14;
 
         PanelContainer demand = Frame("31483f", "476157", 6, 14, 8);
         left.AddChild(demand);
@@ -409,8 +436,8 @@ public partial class ShopGame : Control
         demandRow.AddThemeConstantOverride("h_separation", 9);
         demandRow.AddThemeConstantOverride("v_separation", 6);
         demand.AddChild(demandRow);
-        Label caption = TextLabel("Today’s demand", 16, Light, true);
-        caption.CustomMinimumSize = new Vector2(120, 58);
+        Label caption = TextLabel("Demand", 17, Light, true);
+        caption.CustomMinimumSize = new Vector2(84, 58);
         demandRow.AddChild(caption);
         foreach (ToyFamily family in Catalog.Families)
         {
@@ -499,6 +526,7 @@ public partial class ShopGame : Control
             AddChild(audio[i]);
         }
         bell = Chime([784, 1046.5, 1318.5], .46f);
+        fanfare = Chime([523.25, 659.25, 783.99, 1046.5], .8f);
         click = Sound("select_003");
         wood = Sound("drop_002");
         warning = Sound("error_003");
@@ -561,8 +589,10 @@ public partial class ShopGame : Control
     private void StartCampaign()
     {
         state.CheckedOut -= OnCheckout;
+        state.Announced -= ShowToast;
         state = new ShopState { Muted = state.Muted, ReducedMotion = state.ReducedMotion, Schema = ShopState.CurrentSchema };
         state.CheckedOut += OnCheckout;
+        state.Announced += ShowToast;
         stage.State = state;
         selectedDisplay = null;
         selectedToy = 1;
@@ -704,6 +734,9 @@ public partial class ShopGame : Control
     private void CustomerPanel(Customer customer)
     {
         Header(customer.Name, "");
+        bool known = state.RegularLevel(customer) >= 0 && customer.RegularId >= 0;
+        Line(known ? $"{customer.Persona.Name} · regular" : customer.Persona.Name, 15, Ink, true);
+        Paragraph(customer.Persona.Blurb);
         var (card, caption) = ToyRow(customer.WantsExact ? customer.Wanted : Catalog.FamilyIcons[(int)customer.Family]);
         AddFamilyBadge(card, customer.Family);
         caption.Text = customer.WantsExact ? Catalog.Toys[customer.Wanted].Name : customer.Family.ToString();
@@ -722,10 +755,19 @@ public partial class ShopGame : Control
     private void TillPanel()
     {
         Header("Till report", $"{Catalog.Seasons[state.Season]}, day {state.Date}");
-        if (state.Shift == Shift.Closed && state.Day == ShopState.CampaignDays)
+        if (state.Shift == Shift.Closed && state.LastDayOfYear)
         {
-            Line(state.CampaignResult == 1 ? "The shop is yours!" : "The deed is out of reach", 19, Ink, true);
-            Paragraph($"You saved ${state.DeedSavings:N0} of the ${ShopState.Goal:N0} needed for the deed. The shop stays open in free play.");
+            bool met = state.CampaignResult == 1;
+            if (state.Year == 1)
+            {
+                Line(met ? "The shop is yours!" : "The deed is out of reach", 19, Ink, true);
+                Paragraph($"You saved ${state.DeedSavings:N0} of the ${state.YearTarget:N0} needed for the deed. The shop opens for a second year with a bigger target.");
+            }
+            else
+            {
+                Line(met ? $"Year {state.Year} complete" : $"A lean year {state.Year}", 19, Ink, true);
+                Paragraph($"You made ${state.DeedSavings - state.YearStartCash:N0} against a target of ${state.YearTarget - state.YearStartCash:N0}. Next year asks for more.");
+            }
             Divider();
         }
 
@@ -740,6 +782,8 @@ public partial class ShopGame : Control
         Stat("Sales", () => $"${today.Revenue}", $"${previous.Revenue}");
         Stat("Town orders", () => $"${today.OtherIncome}", $"${previous.OtherIncome}");
         Stat("Expenses", () => $"${today.Spent}", $"${previous.Spent}");
+        Stat("Fair deals", () => today.Bargains.ToString(), previous.Bargains.ToString());
+        Stat("Overcharged", () => today.Gouged.ToString(), previous.Gouged.ToString());
         Divider();
         Stat("Net cash", () => ShopState.Signed(today.Net), ShopState.Signed(previous.Net));
         Divider();
@@ -843,13 +887,15 @@ public partial class ShopGame : Control
         time.Text = $"{(hour + 11) % 12 + 1}:{minutes % 60:00} {(hour >= 12 ? "PM" : "AM")}  ·  Year {state.Year}";
         cash.Text = state.Cash < 0 ? $"−${-state.Cash:N0}" : $"${state.Cash:N0}";
         reputation.Text = $"{state.Reputation} / 100";
-        goal.Text = state.Day > ShopState.CampaignDays
-            ? "Free play" : $"Shop deed   ${state.Cash:N0} / ${ShopState.Goal:N0}";
-        goalProgress.Value = Math.Clamp(state.Cash * 100d / ShopState.Goal, 0, 100);
-        goalProgress.Visible = state.Day <= ShopState.CampaignDays;
-        int remaining = ShopState.CampaignDays - state.Day + 1;
-        daysLeft.Text = state.Day > ShopState.CampaignDays ? "The shop is open for another year." :
-            remaining == 1 ? "Final day for the deed" : $"{remaining} days to earn the deed";
+        goal.Text = state.Year == 1
+            ? $"Shop deed   ${state.Cash:N0} / ${state.YearTarget:N0}"
+            : $"Year {state.Year} profit   ${state.Cash - state.YearStartCash:N0} / ${state.YearTarget - state.YearStartCash:N0}";
+        goalProgress.Value = Math.Clamp(state.YearProgress * 100, 0, 100);
+        int remaining = ShopState.CampaignDays - state.YearDay + 1;
+        daysLeft.Text = remaining == 1 ? "Final day of the year" : $"{remaining} days left this year";
+        rankName.Text = Progress.Ranks[state.Rank];
+        rankMeter.Value = state.RankProgressFraction * 100;
+        rankMeter.TooltipText = $"Renown {state.Renown:N0}";
 
         stageState.Text = room switch
         {
@@ -887,7 +933,7 @@ public partial class ShopGame : Control
             Shift.Open when room != Room.Shop => "Back to shop",
             Shift.Open when state.ReadyToPay is Customer next => $"Ring up · ${next.Basket.Sum(item => item.Price)}",
             Shift.Open => "Shop open",
-            _ when state.Day == ShopState.CampaignDays => "Continue in free play",
+            _ when state.LastDayOfYear => $"Begin year {state.Year + 1}",
             _ => "Start next day"
         };
         action.Disabled = (state.Shift == Shift.Setup && placing.HasValue) ||
@@ -1144,7 +1190,25 @@ public partial class ShopGame : Control
         Save();
     }
 
-    public override void _ExitTree() => state.CheckedOut -= OnCheckout;
+    public override void _ExitTree()
+    {
+        state.CheckedOut -= OnCheckout;
+        state.Announced -= ShowToast;
+    }
+
+    private void ShowToast(string text)
+    {
+        if (toast == null)
+            return;
+        toastText.Text = text;
+        toast.Visible = true;
+        toast.Modulate = Colors.White;
+        toastLeft = 3.4;
+        if (text.StartsWith("Rank up") || text.Contains("deed") || text.Contains("target met"))
+            Play(fanfare, -9);
+        else
+            Play(coins, -17, 1.2f);
+    }
 
     private void OnCheckout(int amount)
     {

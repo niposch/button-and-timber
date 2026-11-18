@@ -49,6 +49,8 @@ internal sealed partial class ShopState
         ToyFamily favourite = Catalog.SeasonalDemand[(Season + (Date - 1) / 3) % Catalog.Families.Length];
         ToyFamily second = Catalog.SeasonalDemand[(Season + (Date - 1) / 2 + 1) % Catalog.Families.Length];
         int expected = family == favourite ? (Fair ? 4 : 3) : family == second ? 2 : 1;
+        if (Event == DayEvent.SchoolTrip && family == ToyFamily.Games)
+            expected += 3;
         return expected + DecorDemand(family);
     }
 
@@ -76,6 +78,8 @@ internal sealed partial class ShopState
     public void UpgradeSave()
     {
         InitializeTraffic();
+        if (Year > 1 && YearStartCash == 0)
+            YearStartCash = Cash;
         if (Schema >= CurrentSchema)
             return;
         if (Schema == 3)
@@ -240,6 +244,7 @@ internal sealed partial class ShopState
         Cash += request.Pay;
         Today.OtherIncome += request.Pay;
         Reputation = Math.Min(100, Reputation + 4 + index * 3);
+        GainRenown(5 + index * 4);
         Note($"{request.Name} delivered · +${request.Pay}");
         return true;
     }
@@ -262,8 +267,7 @@ internal sealed partial class ShopState
             if (Minute >= NextVisitor && Minute < ShopHours - 45 && FindPassingShopper() is Pedestrian passing)
             {
                 Visit(passing);
-                int crowd = (Fair ? 4 : 0) + Reputation / 20 + (Expanded ? 2 : 0) + Math.Min(6, Appeal);
-                NextVisitor = Minute + 26 - crowd + Roll(7) - 3;
+                NextVisitor = Minute + Math.Max(7, 26 - CrowdBonus() + Roll(7) - 3);
             }
             if (Minute >= ShopHours && Customers.Count == 0)
                 Close();
@@ -278,6 +282,7 @@ internal sealed partial class ShopState
         int total = person.Basket.Sum(item => item.Price);
         Cash += total;
         Today.Revenue += total;
+        ChargeVisit(person, total);
         Today.Sold += person.Basket.Count;
         Today.CustomersServed++;
         person.Result = 1;
@@ -331,28 +336,55 @@ internal sealed partial class ShopState
 
     private void Visit(Pedestrian pedestrian)
     {
+        int regularIndex = PickRegular();
+        Regular? regular = regularIndex >= 0 ? Regulars[regularIndex] : null;
+        bool collectorEvent = Event == DayEvent.CollectorVisit && !EventGuestSent && Minute >= 90 && Rank >= 1;
+        Archetype kind = collectorEvent ? Archetype.Collector : regular?.Kind ?? PickArchetype();
+
         ToyFamily family = Catalog.Families[0];
-        int roll = Roll(Catalog.Families.Sum(category => 4 + Forecast(category) * 3));
-        foreach (ToyFamily category in Catalog.Families)
+        if (regular != null)
+            family = regular.Family;
+        else
         {
-            roll -= 4 + Forecast(category) * 3;
-            if (roll >= 0)
-                continue;
-            family = category;
-            break;
+            int roll = Roll(Catalog.Families.Sum(category => 4 + Forecast(category) * 3));
+            foreach (ToyFamily category in Catalog.Families)
+            {
+                roll -= 4 + Forecast(category) * 3;
+                if (roll >= 0)
+                    continue;
+                family = category;
+                break;
+            }
         }
 
         int patron = Roll(100);
         int rare = Reputation >= 66 ? (Fair ? 18 : 10) : 4;
         int tier = patron < rare ? 4 : patron < (Fair ? 37 : 25) ? 3 : patron < 58 ? 2 : 1;
+        if (kind == Archetype.Collector)
+            tier = 4;
         int[] candidates = Enumerable.Range(0, Catalog.Toys.Length)
             .Where(toy => Unlocked[toy] && Catalog.Toys[toy].Family == family && Catalog.Toys[toy].Tier <= tier)
             .OrderByDescending(toy => Catalog.Toys[toy].Tier).ToArray();
-        int wanted = candidates[tier == 1 || Roll(100) < 65 ? 0 : Roll(candidates.Length)];
-        bool exact = candidates.Length > 1 && Roll(100) < (Fair ? 24 : 14);
+        int wanted = candidates[tier == 1 || kind == Archetype.Collector || Roll(100) < 65 ? 0 : Roll(candidates.Length)];
+        bool exact = candidates.Length > 1 && (kind == Archetype.Collector || Roll(100) < (Fair ? 24 : 14));
         int value = Catalog.Toys[wanted].Value;
-        Customer person = new() { Appearance = pedestrian.Appearance, Wanted = wanted, WantsExact = exact,
-            Budget = value + 5 + Roll(17 + value / 2) };
+        int budget = value + 5 + Roll(17 + value / 2);
+        budget = budget * Progress.Personas[(int)kind].Budget / 100;
+        if (collectorEvent)
+            budget = budget * 5 / 2;
+        Customer person = new() { Appearance = regular?.Appearance ?? pedestrian.Appearance, Wanted = wanted, WantsExact = exact,
+            Kind = kind, RegularId = regularIndex, Alias = regular?.Name };
+        if (regular != null)
+        {
+            regular.LastVisitDay = Day;
+            budget = budget * (100 + regular.Bond * 10) / 100;
+        }
+        person.Budget = Math.Max(value, budget);
+        if (collectorEvent)
+        {
+            EventGuestSent = true;
+            Note("The collector has arrived");
+        }
         LeadInside(person, pedestrian);
         Customers.Add(person);
     }
@@ -437,7 +469,7 @@ internal sealed partial class ShopState
                 int price = Prices[toy];
                 bool wanted = Matches(person, toy);
                 int left = person.Budget - person.Basket.Sum(item => item.Price);
-                if (price <= left && price * 100 <= Catalog.Toys[toy].Value * (wanted ? 145 : 112) &&
+                if (price <= left && price * 100 <= Catalog.Toys[toy].Value * Tolerance(person, toy, wanted) &&
                     person.Basket.All(item => item.Toy != toy) && (wanted || Roll(100) < (Fair ? 58 : 42)))
                 {
                     display.Count--;
@@ -447,7 +479,7 @@ internal sealed partial class ShopState
             }
         }
 
-        if (person.Seen.Count >= 3 || person.Basket.Count >= 2 ||
+        if (person.Seen.Count >= 3 || person.Basket.Count >= person.Persona.MaxItems ||
             (person.Basket.Count > 0 && Roll(100) < 53) || Minute >= ShopHours)
             DoneBrowsing(person);
         else
@@ -462,13 +494,15 @@ internal sealed partial class ShopState
         {
             Today.Missed++;
             person.Result = -1;
+            person.Mood = -1;
+            LoseRegular(person);
             Note($"{person.Name} left looking for {Catalog.Toys[person.Wanted].Name}");
             Exit(person);
             return;
         }
 
         person.Phase = VisitPhase.Checkout;
-        person.Wait = 7;
+        person.Wait = CheckoutWait;
         person.Ticket = ++LastTicket;
         WalkTo(person, LineSpot(QueuePosition(person)));
     }

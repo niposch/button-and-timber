@@ -39,7 +39,8 @@ internal sealed partial class ShopState
     [JsonIgnore] public int CartUpgradePrice => CanUpgradeCart ? CartPrices[CartTier] : 0;
     [JsonIgnore] public int NextCartCapacity => CartSizes[Math.Min(CartTier + 1, CartSizes.Length - 1)];
 
-    [JsonIgnore] public int Appeal => PlacedDecorations().Sum(item => item.Season == Season ? 3 : 1);
+    [JsonIgnore] public int Appeal => (PlacedDecorations().Sum(item => item.Season == Season ? 3 : 1) *
+        (Style == Philosophy.Showman ? 3 : 2) + 1) / 2 + (Hired[(int)StaffRole.Dresser] ? 2 : 0);
 
     private IEnumerable<Decoration> PlacedDecorations() => Displays.Where(item => item.Style >= Fixture.Plant)
         .Select(item => item.Style).Distinct().Select(Decorations.Get);
@@ -61,7 +62,7 @@ internal sealed partial class ShopState
 
     public bool RentMoreStorage()
     {
-        if (!CanRentMore)
+        if (!CanRentMore || (StorageTier >= 2 && Rank < 3))
             return false;
         StorageTier++;
         Note($"Stockroom expanded · {StorageCapacity} spaces · ${DailyRent}/day");

@@ -118,7 +118,9 @@ public partial class ShopGame
             Sync(() =>
             {
                 mastery.Text = $"Tier {recipe.Tier}";
-                details.Text = $"{Catalog.Toys[recipe.Prerequisite].Name} · Lv {recipe.RequiredLevel}";
+                details.Text = recipe.Tier > state.MaxTier
+                    ? $"Needs rank {Progress.Ranks[recipe.Tier == 3 ? 2 : 3]}"
+                    : $"{Catalog.Toys[recipe.Prerequisite].Name} · Lv {recipe.RequiredLevel}";
                 learn.Disabled = !state.CanResearch(toy);
             });
         }
