@@ -676,6 +676,19 @@ public partial class ShopGame
         blocked.Displays.Add(new Display { X = 3, Y = 3, Style = Fixture.Display });
         Check(blocked.ResolveTurn(Fixture.Register, new Cell(3, 2), 0, facingDesk) != 0, "a blocked register front picks another side");
 
+        ShopState away = new() { Schema = ShopState.CurrentSchema, Cash = 500 };
+        Check(away.MakeDecoration(Fixture.Plant), "queue a decoration");
+        away.AdvanceBench(1.6, true);
+        double started = away.Orders[0].Work;
+        away.AdvanceBench(60);
+        Check(started > 0 && away.Orders.Count == 1 && away.Orders[0].Work == started, "leaving the workshop pauses a running tool timer");
+        away.AdvanceBench(1, true);
+        Check(away.Orders[0].Work > started || away.Orders.Count == 0 || away.Orders[0].Step > 0, "the timer resumes at the bench");
+        ShopState unattended = new() { Schema = ShopState.CurrentSchema, Cash = 500 };
+        unattended.MakeDecoration(Fixture.Plant);
+        unattended.AdvanceBench(60);
+        Check(unattended.Orders.Count == 0, "decorations nobody touched finish on their own");
+
         ShopState board = new() { Schema = ShopState.CurrentSchema, Cash = 500, Renown = 300 };
         board.Day = 3;
         for (int i = 0; i < 20 && board.Board.Count == 0; i++)

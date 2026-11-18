@@ -145,7 +145,9 @@ internal sealed partial class ShopState
                 seconds -= elapsed;
                 continue;
             }
-            if (!atBench && NeedsHands(order) && !Hired[(int)StaffRole.Apprentice])
+            if (atBench)
+                order.Attended = true;
+            else if (order.Attended || (NeedsHands(order) && !Hired[(int)StaffRole.Apprentice]))
                 return;
 
             double window = ToolWindow(order);
@@ -180,6 +182,7 @@ internal sealed partial class ShopState
     private void NextStep(Order order)
     {
         order.Work = 0;
+        order.Attended = false;
         order.PromptIn = .44;
         if (++order.Step < order.Plan.Length)
             return;

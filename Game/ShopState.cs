@@ -75,6 +75,7 @@ internal sealed class Order
     public double Transfer { get; set; }
     public bool SinglePass { get; set; }
     public double Work { get; set; }
+    public bool Attended { get; set; }
     public int Made { get; set; }
     public int Scrapped { get; set; }
     public int Step { get; set; }
