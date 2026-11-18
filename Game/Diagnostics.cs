@@ -10,7 +10,7 @@ public partial class ShopGame
         await ToSignal(RenderingServer.Singleton, RenderingServer.SignalName.FramePostDraw);
         string prefix = Path.GetFullPath(destination);
         Directory.CreateDirectory(Path.GetDirectoryName(prefix)!);
-        for (int index = 0; index < 13; index++)
+        for (int index = 0; index < 16; index++)
         {
             OpenRoom(index < 3 ? (Room)index : index is 4 or 5 ? Room.Workshop : Room.Shop);
             stage.SnapCamera();
@@ -115,6 +115,37 @@ public partial class ShopGame
                 townTab = 0;
                 OpenRoom(Room.Shop);
                 state.Announce("Rank up · Craftsman");
+            }
+
+            if (index == 13)
+            {
+                state.Shift = Shift.Closed;
+                state.Day = 5;
+                state.Stock[0] = 6;
+                for (int i = 0; i < 12 && state.Board.Count < 3; i++)
+                    state.Tomorrow();
+                state.Shift = Shift.Setup;
+                townTab = 0;
+                OpenRoom(Room.Town);
+            }
+            if (index == 14)
+            {
+                showWorkshopTools = true;
+                OpenRoom(Room.Workshop);
+                showWorkshopTools = true;
+                Rebuild();
+            }
+            if (index == 15)
+            {
+                showWorkshopTools = false;
+                state.Day = 24;
+                state.Cash = 2100;
+                state.Shift = Shift.Open;
+                state.Customers.Clear();
+                state.Close();
+                OpenRoom(Room.Shop);
+                summary = true;
+                Rebuild();
             }
 
             UpdateReadouts();
@@ -608,6 +639,28 @@ public partial class ShopGame
             DaybookJson.Default.ShopState)!;
         saved.Regulars.Add(new Regular { Name = "Test", Affinity = 12 });
         Check(saved.Renown == run.Renown && saved.Style == run.Style && saved.Regulars[0].Bond == 1, "progression round-trips through saves");
+        ShopState board = new() { Schema = ShopState.CurrentSchema, Cash = 500, Renown = 300 };
+        board.Day = 3;
+        for (int i = 0; i < 20 && board.Board.Count == 0; i++)
+        {
+            board.Shift = Shift.Closed;
+            board.Tomorrow();
+        }
+        Check(board.Board.Count > 0, "the request board fills");
+        Request ask = board.Board[0];
+        board.Stock[ask.Toy] = ask.Count;
+        int before = board.Cash;
+        Check(board.Fill(ask) && board.Cash == before + ask.Pay && !board.Board.Contains(ask), "filling a request pays");
+        board.Board.Add(new Request { Toy = 0, Count = 1, Pay = 20, DueDay = board.Day - 1, Giver = "Late" });
+        int standing = board.Reputation;
+        board.Shift = Shift.Closed;
+        board.Tomorrow();
+        Check(board.Reputation < standing && board.Board.All(r => r.Giver != "Late"), "late requests expire and cost reputation");
+        ShopState bench = new() { Schema = ShopState.CurrentSchema, Cash = 1000, Renown = 300 };
+        int cost = bench.UpgradeCost(Upgrades.SharpTools);
+        int yield = bench.Yield(Catalog.Engine);
+        Check(bench.BuyUpgrade(Upgrades.SharpTools) && bench.Cash == 1000 - cost && bench.Yield(Catalog.Engine) == yield + 3, "tool upgrades raise yield");
+        Check(!bench.BuyUpgrade(Upgrades.PatternBooks) || bench.ResearchCost(Catalog.TrainYard) < Catalog.Toys[Catalog.TrainYard].Research, "pattern books cut learning costs");
         Check(new ShopState { Day = 25, Cash = 5000, YearStartCash = 5000 }.YearTarget > 5000 + 1600, "later years ask for more");
     }
 

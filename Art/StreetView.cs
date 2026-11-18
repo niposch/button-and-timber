@@ -450,12 +450,30 @@ public partial class StreetView : Control
                 new[] { "c6b69d", "cdbca0", "baaf9a", "d1c0a6" }[Hash(x, y) % 4]);
 
         Ground(3.88f, 3.2f, 6.12f, 5.45f, "9a9d83");
-        Tree(.35f, .7f, 1.27f);
-        House(1.35f, 1.05f, 2.49f, 1.81f, "897f6a", "a16055");
-        House(4.74f, .37f, 3.18f, 2.47f, "dad0a2", "4c7f79");
-        Tree(8.45f, .91f, 1.1f);
-        Stall(.5f, 4.13f, "ab6556", "e5c18c");
-        Stall(6.86f, 3.68f, "527d73", "d8c88f");
+        float stroll = (float)(State.StreetClock % 1000) * .118f;
+        float strollX = 3.24f + Mathf.Sin(stroll) * .35f;
+        List<(float Depth, Action Paint)> scene =
+        [
+            (1.05f, () => Tree(.35f, .7f, 1.27f)),
+            (4.55f, () => House(1.35f, 1.05f, 2.49f, 1.81f, "897f6a", "a16055")),
+            (7.9f, () => House(4.74f, .37f, 3.18f, 2.47f, "dad0a2", "4c7f79")),
+            (9.36f, () => Tree(8.45f, .91f, 1.1f)),
+            (5.8f, () => Stall(.5f, 4.13f, "ab6556", "e5c18c")),
+            (11.7f, () => Stall(6.86f, 3.68f, "527d73", "d8c88f")),
+            (9.3f, Fountain),
+            (strollX + 4.3f, () => Figure(strollX, 4.3f, 3, Mathf.Cos(stroll) >= 0 ? 2 : 0, WalkFrame(3))),
+            (11.39f, () => Figure(6.54f, 4.85f, 5, 2, 0)),
+            (8.27f, () => Figure(5.34f, 2.93f, 2, 2, 0)),
+            (8.2f, () => Tree(1.15f, 7.03f, 1.23f)),
+            (12.1f, () => Planter(6.02f, 6.09f, .92f))
+        ];
+        if (State.Fair)
+            scene.Add((8.8f, () => Figure(3.31f, 5.49f, 0, 3, 0)));
+        DrawProps(scene);
+    }
+
+    private void Fountain()
+    {
         Box(4.1f, 3.43f, 1.83f, 1.79f, 0, 16, "8b978b");
         Box(4.18f, 3.51f, 1.67f, 1.63f, 16, 19, "bac3ac");
         Ground(4.34f, 3.67f, 5.69f, 4.99f, "7daba8", 20);
@@ -467,15 +485,6 @@ public partial class StreetView : Control
             Vector2 drop = P(5f + t * .32f, 4.32f + t * (i - 1) * .12f, 51 + 11 * Mathf.Sin(t * Mathf.Pi) - 28 * t);
             Pixel(drop.X, drop.Y, 2, 3, "d7e2c4");
         }
-
-        float stroll = (float)(State.StreetClock % 1000) * .118f;
-        Figure(3.24f + Mathf.Sin(stroll) * .35f, 4.3f, 3, Mathf.Cos(stroll) >= 0 ? 2 : 0, WalkFrame(3));
-        Figure(6.54f, 4.85f, 5, 2, 0);
-        Figure(5.34f, 2.93f, 2, 2, 0);
-        if (State.Fair)
-            Figure(3.31f, 5.49f, 0, 3, 0);
-        Tree(1.15f, 7.03f, 1.23f);
-        Planter(6.02f, 6.09f, .92f);
     }
 
     private void WallRoom(int width, int length, bool workshop)

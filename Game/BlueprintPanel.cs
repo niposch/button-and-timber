@@ -11,6 +11,12 @@ public partial class ShopGame
 
     private void WorkshopPanel()
     {
+        if (showWorkshopTools)
+        {
+            ToolsPanel();
+            ShowQueue();
+            return;
+        }
         if (showWorkshopDecor)
         {
             DecorPanel(makeOnly: true);
@@ -110,7 +116,7 @@ public partial class ShopGame
         {
             int toy = selectedToy;
             Line($"Make ${recipe.Materials}   Sell ${recipe.Value}   ✓ {recipe.BaseYield}%", 14, Ink);
-            Button learn = AddButton($"Learn · ${recipe.Research}", () =>
+            Button learn = AddButton($"Learn · ${state.ResearchCost(toy)}", () =>
             {
                 if (state.Research(toy))
                     Changed();
@@ -198,7 +204,7 @@ public partial class ShopGame
                     card.AddThemeStyleboxOverride("hover", Box("f7e6ab", "fff2ba", 5));
                 }
                 art.Modulate = unlocked || learnable ? Colors.White : new Color(.8f, .83f, .79f, .84f);
-                stock.Text = unlocked ? $"×{state.Stock[toy] + state.StockOnDisplay(toy)}" : $"${recipe.Research}";
+                stock.Text = unlocked ? $"×{state.Stock[toy] + state.StockOnDisplay(toy)}" : $"${state.ResearchCost(toy)}";
                 level.Text = unlocked ? $"Lv {state.Level(toy)}" : learnable ? "+" : "";
                 locked.Visible = !unlocked && !learnable;
             });

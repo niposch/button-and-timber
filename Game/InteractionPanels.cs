@@ -192,6 +192,8 @@ public partial class ShopGame
             StandingPanel();
             return;
         }
+        RequestBoard();
+        Divider();
         CartUpgrade();
         Contract(Catalog.Fairs[state.Season], state.CommissionToy, state.CommissionCount, state.CommissionPay,
             () => state.Commissions[state.Season], () => state.Deliver());
@@ -214,7 +216,7 @@ public partial class ShopGame
 
         void Contract(string name, int toy, int count, int pay, Func<bool> filled, Func<bool> deliver, int rep = 0)
         {
-            Line(name, 17, Ink, true);
+            Section(name);
             var (card, caption) = ToyRow(toy);
             caption.Text = $"{count} × {Catalog.Toys[toy].Name}";
             AddFamilyBadge(card, Catalog.Toys[toy].Family);

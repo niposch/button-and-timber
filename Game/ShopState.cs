@@ -162,7 +162,7 @@ internal sealed partial class ShopState
     public int ToyCost(int toy) => Math.Max(2, (int)Math.Round(Catalog.Toys[toy].Materials * (1 - (Level(toy) - 1) * .09) *
         (Style == Philosophy.Volume ? .82 : 1) * (Event == DayEvent.SupplierSale ? .75 : 1)));
     public int Level(int toy) => Array.FindLastIndex(LevelExperience, xp => Practice[toy] >= xp) + 1;
-    public int Yield(int toy) => Math.Min(99, Catalog.Toys[toy].BaseYield + (Level(toy) - 1) * 8 +
+    public int Yield(int toy) => Math.Min(99, Catalog.Toys[toy].BaseYield + (Level(toy) - 1) * 8 + UpgradeLevel(Upgrades.SharpTools) * 3 +
         (Style == Philosophy.Heirloom && Catalog.Toys[toy].Tier >= 3 ? 4 : 0));
     public double MasteryProgress(int toy)
     {
@@ -177,7 +177,7 @@ internal sealed partial class ShopState
     public bool CanResearch(int toy)
     {
         Toy recipe = Catalog.Toys[toy];
-        return MeetsPrerequisite(toy) && recipe.Tier <= MaxTier && Cash >= recipe.Research;
+        return MeetsPrerequisite(toy) && recipe.Tier <= MaxTier && Cash >= ResearchCost(toy);
     }
 
     public bool MeetsPrerequisite(int toy)
@@ -192,7 +192,7 @@ internal sealed partial class ShopState
         if (!CanResearch(toy))
             return false;
 
-        Spend(Catalog.Toys[toy].Research);
+        Spend(ResearchCost(toy));
         Unlocked[toy] = true;
         Announce($"Pattern learned · {Catalog.Toys[toy].Name}");
         GainRenown(5 + Catalog.Toys[toy].Tier * 2);
@@ -340,6 +340,7 @@ internal sealed partial class ShopState
         Shift = Shift.Setup;
         Note(Fair ? $"{Catalog.Fairs[Season]} is on today" : "A new day on Alder Lane");
         RollEvent();
+        RefreshBoard();
         foreach (Regular regular in Regulars)
             if (regular.LastVisitDay < Day - 6)
                 regular.Affinity = Math.Max(0, regular.Affinity - 1);

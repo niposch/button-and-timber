@@ -35,7 +35,7 @@ public partial class ShopGame
         Paragraph("Earn renown from sales, regulars, orders, new patterns and levelling up toys.");
         Divider();
 
-        Line("Shop style", 17, Ink, true);
+        Section("Shop style");
         if (state.Rank < 2)
             Paragraph($"Reach {Progress.Ranks[2]} to choose how your shop trades.");
         else
@@ -59,7 +59,7 @@ public partial class ShopGame
         }
         Divider();
 
-        Line("Staff", 17, Ink, true);
+        Section("Staff");
         for (int i = 0; i < Progress.Staff.Length; i++)
         {
             int role = i;
@@ -79,7 +79,7 @@ public partial class ShopGame
             Paragraph($"Wages are paid at closing: ${state.Wages}/day.");
         Divider();
 
-        Line($"Regulars  {state.Regulars.Count}/{state.RegularCap}", 17, Ink, true);
+        Section($"Regulars  {state.Regulars.Count}/{state.RegularCap}");
         if (state.Regulars.Count == 0)
             Paragraph("Happy shoppers sometimes come back. Fair prices and a well-stocked shelf make regulars.");
         foreach (Regular regular in state.Regulars.OrderByDescending(regular => regular.Affinity))
@@ -121,5 +121,76 @@ public partial class ShopGame
         if (expected.Length > 0)
             Paragraph($"Regulars may drop in: {string.Join(", ", expected)}.");
         Divider();
+    }
+}
+
+public partial class ShopGame
+{
+    private Button toolPlans = null!;
+    private bool showWorkshopTools;
+
+    private Label Section(string text)
+    {
+        content.AddChild(new Control { CustomMinimumSize = new Vector2(0, 4), MouseFilter = MouseFilterEnum.Ignore });
+        Label label = TextLabel(text.ToUpperInvariant(), 11, Faded);
+        content.AddChild(label);
+        return label;
+    }
+
+    private void RequestBoard()
+    {
+        Section("Requests");
+        if (state.Board.Count == 0)
+            Paragraph("New requests arrive each morning. Regulars ask for their favourites and pay a premium.");
+        foreach (Request request in state.Board.ToArray())
+        {
+            Request ask = request;
+            var (card, caption) = ToyRow(ask.Toy);
+            caption.Text = $"{ask.Count} × {Catalog.Toys[ask.Toy].Name}";
+            AddFamilyBadge(card, Catalog.Toys[ask.Toy].Family);
+            HBoxContainer row = Row();
+            Label who = In(row, "", 13, Faded, true);
+            Button deliver = InButton(row, $"Deliver · ${ask.Pay}", () =>
+            {
+                if (state.Fill(ask))
+                    Changed();
+            }, 127);
+            Sync(() =>
+            {
+                int left = state.DaysLeft(ask);
+                string due = left <= 0 ? "due today" : left == 1 ? "due tomorrow" : $"{left} days left";
+                who.Text = $"{ask.Giver} · {due} · {Math.Min(state.Stock[ask.Toy], ask.Count)}/{ask.Count}";
+                who.AddThemeColorOverride("font_color", left <= 0 ? Clay : Faded);
+                deliver.Disabled = !state.CanFill(ask);
+            });
+        }
+    }
+
+    private void ToolsPanel()
+    {
+        Header("Tools", "");
+        AddButton("‹  Blueprints", () =>
+        {
+            showWorkshopTools = false;
+            Rebuild();
+        });
+        for (int i = 0; i < Upgrades.All.Length; i++)
+        {
+            int index = i;
+            WorkshopUpgrade info = Upgrades.All[i];
+            Section(info.Name);
+            Paragraph(info.Blurb);
+            HBoxContainer row = Row();
+            string pips = new string('●', state.UpgradeLevel(i)) + new string('○', info.Cost.Length - state.UpgradeLevel(i));
+            In(row, pips, 16, Ink, true);
+            Button buy = InButton(row, "", () =>
+            {
+                if (state.BuyUpgrade(index))
+                    Changed();
+            }, 150);
+            buy.Text = state.UpgradeMaxed(i) ? "Fully upgraded" :
+                state.Rank < state.UpgradeRank(i) ? Progress.Ranks[state.UpgradeRank(i)] : $"Upgrade · ${state.UpgradeCost(i)}";
+            buy.Disabled = !state.CanUpgrade(i);
+        }
     }
 }

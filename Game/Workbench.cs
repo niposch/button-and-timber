@@ -149,7 +149,7 @@ internal sealed partial class ShopState
                 return;
 
             double window = ToolWindow(order);
-            double rate = atBench ? 1 : 1 + (ProjectLevel(order) - 1) * .14;
+            double rate = (atBench ? 1 : 1 + (ProjectLevel(order) - 1) * .14) * (1 + UpgradeLevel(Upgrades.QuickHands) * .12);
             double progress = Math.Min(seconds * rate, window - order.Work);
             order.Work += progress;
             seconds -= progress / rate;
@@ -195,6 +195,12 @@ internal sealed partial class ShopState
                 passed++;
 
         int scrap = attempts - passed;
+        if (scrap > 0 && !order.Decoration.HasValue && UpgradeLevel(Upgrades.ScrapBin) > 0)
+        {
+            int refund = (int)(ToyCost(order.Toy) * scrap * .25 * UpgradeLevel(Upgrades.ScrapBin));
+            Cash += refund;
+            Today.Spent -= refund;
+        }
         order.StageLeft -= attempts;
         order.Remaining -= scrap;
         order.Scrapped += scrap;

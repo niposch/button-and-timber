@@ -450,11 +450,11 @@ public partial class ShopGame : Control
                 selectedToy = root;
                 OpenRoom(Room.Workshop);
             }, dark: true);
-            tile.CustomMinimumSize = new Vector2(102, 58);
+            tile.CustomMinimumSize = new Vector2(110, 58);
             demandRow.AddChild(tile);
             Place(tile, new FamilyIcon { Family = family, MouseFilter = MouseFilterEnum.Ignore }, 8, 7, 41, 41);
-            Label heat = Put(tile, "", 55, 7, 44, 20, 12, Brass);
-            Label stock = Put(tile, "", 58, 28, 43, 20, 12, Cream);
+            Label heat = Put(tile, "", 54, 9, 54, 20, 14, Brass);
+            Label stock = Put(tile, "", 54, 29, 54, 20, 11, Cream);
             demandTiles.Add((tile, heat, stock));
         }
         earnings = TextLabel("", 14, Cream);
@@ -474,24 +474,34 @@ public partial class ShopGame : Control
         VBoxContainer sideColumn = new();
         sideColumn.AddThemeConstantOverride("separation", 0);
         side.AddChild(sideColumn);
-        PanelContainer head = Frame("f2e5c7", "f2e5c7", 5, 16, 8);
+        PanelContainer head = Frame("eadbbc", "eadbbc", 5, 16, 8);
         sideColumn.AddChild(head);
         HBoxContainer headRow = new();
         head.AddChild(headRow);
         VBoxContainer titles = new() { SizeFlagsHorizontal = SizeFlags.ExpandFill };
         titles.AddThemeConstantOverride("separation", 0);
         headRow.AddChild(titles);
-        panelTitle = TextLabel("", 25, Ink, true);
+        panelTitle = TextLabel("", 23, Ink, true);
         panelContext = TextLabel("", 12, Faded);
         titles.AddChild(panelTitle);
         titles.AddChild(panelContext);
         decorPlans = MakeButton("Decor", () =>
         {
             showWorkshopDecor = !showWorkshopDecor;
+            showWorkshopTools = false;
             Rebuild();
         });
-        decorPlans.CustomMinimumSize = new Vector2(77, 34);
+        decorPlans.CustomMinimumSize = new Vector2(72, 34);
         decorPlans.SizeFlagsVertical = SizeFlags.ShrinkCenter;
+        toolPlans = MakeButton("Tools", () =>
+        {
+            showWorkshopTools = !showWorkshopTools;
+            showWorkshopDecor = false;
+            Rebuild();
+        });
+        toolPlans.CustomMinimumSize = new Vector2(72, 34);
+        toolPlans.SizeFlagsVertical = SizeFlags.ShrinkCenter;
+        headRow.AddChild(toolPlans);
         headRow.AddChild(decorPlans);
         sideColumn.AddChild(new ColorRect { Color = ToyArt.C("b4a17b"), CustomMinimumSize = new Vector2(0, 1), MouseFilter = MouseFilterEnum.Ignore });
 
@@ -579,6 +589,7 @@ public partial class ShopGame : Control
         placing = null;
         showDecor = false;
         showWorkshopDecor = false;
+        showWorkshopTools = false;
         showStockroom = false;
         reading = null;
         status = "";
@@ -941,8 +952,9 @@ public partial class ShopGame : Control
             var tile = demandTiles[(int)family];
             int heat = state.Forecast(family);
             bool stock = state.StocksFamily(family);
-            tile.Heat.Text = new string('•', heat);
-            tile.Stock.Text = stock ? "✓" : "—";
+            tile.Heat.Text = heat >= 4 ? "Hot" : heat >= 2 ? "Steady" : "Quiet";
+            tile.Stock.Text = stock ? "on shelf" : "no stock";
+            tile.Stock.AddThemeColorOverride("font_color", stock ? ToyArt.C("b9cdb4") : ToyArt.C("e9a58f"));
             tile.Button.TooltipText = $"{family} · demand {heat}/6 · {(stock ? "on display" : "none on display")}";
         }
         earnings.Text = $"{state.Today.Sold} sold   ·   ${state.Today.Revenue}";
@@ -968,6 +980,8 @@ public partial class ShopGame : Control
         ledger.TooltipText = state.Notes.FirstOrDefault() ?? "";
         decorPlans.Visible = room == Room.Workshop && !summary && !showStockroom;
         decorPlans.Text = showWorkshopDecor ? "Toys" : "Decor";
+        toolPlans.Visible = decorPlans.Visible;
+        toolPlans.Text = showWorkshopTools ? "Toys" : "Tools";
 
         for (int i = 0; i < tabs.Count; i++)
             SelectedStyle(tabs[i], i == (int)room, true);
@@ -1125,8 +1139,8 @@ public partial class ShopGame : Control
             return;
 
         button.SetMeta("selected", selected);
-        string fill = selected ? dark ? "d9bd87" : "e5ca93" : dark ? "364e45" : "efe1bf";
-        string stroke = selected ? dark ? "eee0b1" : "9e784d" : dark ? "587064" : "beab83";
+        string fill = selected ? dark ? "d9bd87" : "e5ca93" : dark ? "2b3d37" : "f2e6c8";
+        string stroke = selected ? dark ? "eee0b1" : "b58d58" : dark ? "3d524a" : "dccba3";
         string hover = selected ? "ecd2a0" : dark ? "456154" : "f5e8ca";
         string pressed = selected ? "c19c66" : dark ? "2b4139" : "dfc692";
         Color text = selected || !dark ? Ink : Light;
