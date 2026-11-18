@@ -2,7 +2,7 @@ namespace ButtonAndTimber;
 
 internal enum Room { Shop, Workshop, Town }
 internal enum Shift { Setup, Open, Closed }
-internal enum Fixture { Display, Table }
+internal enum Fixture { Display, Table, Register, Plant }
 
 internal sealed record Toy(string Name, string Family, int Materials, int Value, int Time,
     int Research, int Prerequisite, int Practice, int Season);
@@ -35,7 +35,7 @@ internal sealed class Display
     public int Toy { get; set; } = -1;
     public int Count { get; set; }
     public Fixture Style { get; set; }
-    public int Capacity => Style == Fixture.Table ? 7 : 5;
+    public int Capacity => Style switch { Fixture.Table => 7, Fixture.Display => 5, _ => 0 };
 }
 
 internal sealed class Order
@@ -45,16 +45,16 @@ internal sealed class Order
     public double Work { get; set; }
     public int Made { get; set; }
     public int Scrapped { get; set; }
+    public int Step { get; set; }
+    public int Grade { get; set; }
+    public double PromptIn { get; set; } = .65;
 }
 
-internal sealed class Customer
+internal sealed partial class Customer
 {
     public int Appearance { get; set; }
     public int Wanted { get; set; }
     public int Budget { get; set; }
-    public int TargetX { get; set; }
-    public int TargetY { get; set; }
-    public double Age { get; set; }
     public int Result { get; set; }
     public string Name => Names[Appearance % Names.Length];
     private static readonly string[] Names =
@@ -65,6 +65,7 @@ internal sealed class Till
 {
     public int Visitors { get; set; }
     public int Sold { get; set; }
+    public int CustomersServed { get; set; }
     public int Revenue { get; set; }
     public int Spent { get; set; }
     public int OtherIncome { get; set; }
@@ -73,16 +74,15 @@ internal sealed class Till
     public int Net => Revenue + OtherIncome - Spent;
 }
 
-internal sealed class ShopState
+internal sealed partial class ShopState
 {
     public const int Goal = 1750;
     public const int CampaignDays = 24;
     public const int ShopHours = 540;
     public const int Upkeep = 16;
     public const int Permit = 170;
-    public const int TablePrice = 75;
-
-    public int Cash { get; set; } = 115;
+    public int Schema { get; set; }
+    public int Cash { get; set; } = 150;
     public int Day { get; set; } = 1;
     public int Reputation { get; set; } = 52;
     public Shift Shift { get; set; }
@@ -99,12 +99,7 @@ internal sealed class ShopState
     public int[] Prices { get; set; } = Catalog.Toys.Select(toy => toy.Value).ToArray();
     public int[] Practice { get; set; } = new int[Catalog.Toys.Length];
     public bool[] Unlocked { get; set; } = [true, true, true, false, false, false, false, false, false, false];
-    public List<Display> Displays { get; set; } =
-    [
-        new() { X = 1, Y = 2, Toy = 0, Count = 3 },
-        new() { X = 4, Y = 1, Toy = 1, Count = 3 },
-        new() { X = 3, Y = 4, Toy = 2, Count = 3, Style = Fixture.Table }
-    ];
+    public List<Display> Displays { get; set; } = [];
     public List<Order> Orders { get; set; } = [];
     public List<Customer> Customers { get; set; } = [];
     public Till Today { get; set; } = new();
@@ -153,44 +148,9 @@ internal sealed class ShopState
         return true;
     }
 
-    public void AdvanceBench(double seconds)
-    {
-        while (Orders.Count > 0 && seconds > 0)
-        {
-            Order order = Orders[0];
-            int toy = order.Toy;
-            int workPerUnit = Catalog.Toys[toy].Time;
-            double work = Math.Min(seconds, workPerUnit - order.Work);
-            order.Work += work;
-            seconds -= work;
-            if (order.Work < workPerUnit - 0.00001)
-                break;
-
-            order.Work = 0;
-            order.Remaining--;
-            if (Roll(100) < Yield(toy))
-            {
-                Stock[toy]++;
-                order.Made++;
-            }
-            else
-            {
-                order.Scrapped++;
-            }
-
-            Practice[toy]++;
-            if (order.Remaining > 0)
-                continue;
-
-            string scrap = order.Scrapped > 0 ? $" · {order.Scrapped} scrapped" : "";
-            Note($"Bench finished · {order.Made} {Catalog.Toys[toy].Name}{scrap}");
-            Orders.RemoveAt(0);
-        }
-    }
-
     public void Assign(Display display, int toy)
     {
-        if (display.Toy == toy || (toy >= 0 && !Unlocked[toy]))
+        if (display.Capacity == 0 || display.Toy == toy || (toy >= 0 && !Unlocked[toy]))
             return;
 
         if (display.Toy >= 0)
@@ -212,44 +172,10 @@ internal sealed class ShopState
         return transfer;
     }
 
-    public void RestockAll()
+    public void Replenish()
     {
-        int moved = Displays.Sum(Restock);
-        Note(moved > 0 ? $"Shelves filled · {moved} toys" : "No spare stock for these displays");
-    }
-
-    public bool CanPlace(int x, int y) =>
-        x >= 1 && x < Width - 1 && y >= 1 && y < 5 &&
-        (x != Width - 2 || y != 1) &&
-        !Displays.Any(display => display.X == x && display.Y == y);
-
-    public bool Move(Display display, int x, int y)
-    {
-        if (Shift == Shift.Open || !CanPlace(x, y))
-            return false;
-
-        display.X = x;
-        display.Y = y;
-        return true;
-    }
-
-    public bool BuyTable()
-    {
-        if (Shift == Shift.Open || Cash < TablePrice || Displays.Count >= (Expanded ? 7 : 4))
-            return false;
-
-        for (int y = 1; y < 5; y++)
-        for (int x = Width - 2; x >= 1; x--)
-        {
-            if (!CanPlace(x, y))
-                continue;
-
-            Spend(TablePrice);
-            Displays.Add(new Display { X = x, Y = y, Style = Fixture.Table });
-            return true;
-        }
-
-        return false;
+        foreach (Display display in Displays)
+            Restock(display);
     }
 
     public bool Expand()
@@ -278,40 +204,15 @@ internal sealed class ShopState
         return true;
     }
 
-    public void Open()
+    public bool Open()
     {
-        if (Shift != Shift.Setup)
-            return;
+        if (Shift != Shift.Setup || Register == null || !Displays.Any(display => display.Count > 0))
+            return false;
 
-        NextVisitor = 7;
+        NextVisitor = 5;
         Shift = Shift.Open;
         Note("The bell is ringing. Doors are open.");
-    }
-
-    public void AdvanceShop(double minutes)
-    {
-        if (Shift != Shift.Open)
-            return;
-
-        double elapsed = Math.Min(minutes, ShopHours - Minute);
-        Minute += elapsed;
-        foreach (Customer customer in Customers)
-        {
-            customer.Age += elapsed;
-            if (customer.Age >= 30 && customer.Result == 0)
-                FinishVisit(customer);
-        }
-
-        Customers.RemoveAll(customer => customer.Age >= 52);
-        if (Minute >= NextVisitor && Minute < ShopHours - 28)
-        {
-            Visit();
-            int crowd = (Fair ? 5 : 0) + Reputation / 15 + (Expanded ? 3 : 0);
-            NextVisitor = Minute + 34 - crowd + Roll(11) - 5;
-        }
-
-        if (Minute >= ShopHours)
-            Close();
+        return true;
     }
 
     public void Close()
@@ -319,14 +220,15 @@ internal sealed class ShopState
         if (Shift != Shift.Open)
             return;
 
-        foreach (Customer customer in Customers.Where(customer => customer.Result == 0))
-            FinishVisit(customer);
-
+        foreach (Customer customer in Customers.Where(person => person.Result == 0))
+            foreach (BasketItem item in customer.Basket)
+                Stock[item.Toy]++;
         Customers.Clear();
+        Replenish();
         Spend(Upkeep);
         if (Today.Visitors > 0)
         {
-            int change = (int)Math.Round((double)(Today.Sold - Today.Missed) / Today.Visitors * 8);
+            int change = (int)Math.Round((double)(Today.CustomersServed - Today.Missed) / Today.Visitors * 8);
             Reputation = Math.Clamp(Reputation + change, 15, 100);
         }
 
@@ -347,11 +249,15 @@ internal sealed class ShopState
 
         Day++;
         if (Date == 1 && Season == 0)
+        {
             Commissions = new bool[4];
+            SideOrders = new int[4];
+        }
 
         Yesterday = Today;
         Today = new Till();
         Minute = 0;
+        ShopRemainder = 0;
         Shift = Shift.Setup;
         Note(Fair ? $"{Catalog.Fairs[Season]} is on today" : "A new day on Alder Lane");
     }
@@ -364,63 +270,6 @@ internal sealed class ShopState
     }
 
     public static string Signed(int amount) => amount < 0 ? $"−${-amount}" : $"+${amount}";
-
-    private void Visit()
-    {
-        int appearance = Roll(48);
-        List<int> weighted = [];
-        for (int toy = 0; toy < Catalog.Toys.Length; toy++)
-        {
-            int weight = Unlocked[toy] ? 5 : Day < 3 ? 0 : 1;
-            if (Catalog.Toys[toy].Season == Season && weight > 0)
-                weight += Fair ? 5 : 2;
-            for (int i = 0; i < weight; i++)
-                weighted.Add(toy);
-        }
-
-        int wanted = weighted[Roll(weighted.Count)];
-        Display target = Displays.FirstOrDefault(display => display.Toy == wanted && display.Count > 0) ??
-            Displays[Roll(Displays.Count)];
-        Customers.Add(new Customer
-        {
-            Appearance = appearance,
-            Wanted = wanted,
-            Budget = Catalog.Toys[wanted].Value + 2 + Roll(4 + Catalog.Toys[wanted].Value / 3),
-            TargetX = target.X,
-            TargetY = target.Y
-        });
-        Today.Visitors++;
-    }
-
-    private void FinishVisit(Customer customer)
-    {
-        Display? choice = Displays
-            .Where(display => display.Count > 0 && Prices[display.Toy] <= customer.Budget)
-            .OrderByDescending(display => display.Toy == customer.Wanted)
-            .ThenBy(display => Prices[display.Toy])
-            .FirstOrDefault();
-
-        bool wanted = choice?.Toy == customer.Wanted;
-        if (choice != null && (wanted || Roll(100) < (Fair ? 51 : 35)))
-        {
-            int price = Prices[choice.Toy];
-            Cash += price;
-            Today.Revenue += price;
-            Today.Sold++;
-            choice.Count--;
-            customer.Result = 1;
-            Note($"{customer.Name} bought {Catalog.Toys[choice.Toy].Name} · +${price}");
-        }
-        else
-        {
-            Today.Missed++;
-            customer.Result = -1;
-            Note($"{customer.Name} left looking for {Catalog.Toys[customer.Wanted].Name}");
-        }
-
-        if (!wanted)
-            Today.Requests[customer.Wanted]++;
-    }
 
     private int Roll(int max)
     {

@@ -8,23 +8,63 @@ public partial class StreetView : Control
     internal Room Room { get; set; }
     internal Display? Selected { get; set; }
     internal Customer? Reading { get; set; }
-    internal bool Moving { get; set; }
+    internal Fixture? Placement { get; set; }
+    internal HashSet<Cell> BuildTiles { get; set; } = [];
     internal bool ReducedMotion { get; set; }
     internal bool Paused { get; set; }
     internal Action<Display>? DisplayPicked { get; set; }
     internal Action<Customer>? CustomerPicked { get; set; }
-    internal Action<Vector2I>? TilePicked { get; set; }
+    internal Action<Cell>? TilePicked { get; set; }
+    internal Action? EmptyFloorPicked { get; set; }
 
     private readonly List<(Rect2 Bounds, object Item)> hits = [];
+    private readonly List<(int Amount, float Age)> sales = [];
+    private readonly Dictionary<string, Texture2D> sprites = [];
+    private readonly Dictionary<Customer, Vector2> positions = [];
     private Vector2 origin;
     private float scale;
     private float clock;
+    private float benchFlash;
+    private bool cutCleanly;
 
     public override void _Process(double delta)
     {
         if (!ReducedMotion && !Paused)
             clock += (float)delta;
+        benchFlash = Math.Max(0, benchFlash - (float)delta);
+        if (Room == Room.Shop)
+        {
+            foreach (Customer person in State.Customers)
+            {
+                Vector2 target = CustomerPosition(person);
+                positions[person] = positions.TryGetValue(person, out Vector2 previous)
+                    ? previous.Lerp(target, 1 - Mathf.Exp(-(float)delta * 17)) : target;
+            }
+            foreach (Customer gone in positions.Keys.Where(person => !State.Customers.Contains(person)).ToArray())
+                positions.Remove(gone);
+        }
+        for (int i = sales.Count - 1; i >= 0; i--)
+        {
+            var sale = sales[i];
+            sale.Age += (float)delta;
+            if (sale.Age >= 1.36f)
+                sales.RemoveAt(i);
+            else
+                sales[i] = sale;
+        }
         QueueRedraw();
+    }
+
+    internal void RegisterSale(int amount)
+    {
+        if (Room == Room.Shop)
+            sales.Add((amount, 0));
+    }
+
+    internal void BenchStroke(bool clean)
+    {
+        cutCleanly = clean;
+        benchFlash = .38f;
     }
 
     public override void _GuiInput(InputEvent input)
@@ -32,11 +72,9 @@ public partial class StreetView : Control
         if (input is not InputEventMouseButton { ButtonIndex: MouseButton.Left, Pressed: true } mouse || Room != Room.Shop)
             return;
 
-        if (Moving)
+        if (Placement.HasValue)
         {
-            Vector2 point = (mouse.Position - origin) / scale;
-            TilePicked?.Invoke(new Vector2I(Mathf.FloorToInt((point.X / 39 + point.Y / 19.5f) / 2),
-                Mathf.FloorToInt((point.Y / 19.5f - point.X / 39) / 2)));
+            TilePicked?.Invoke(FloorTile(mouse.Position));
             return;
         }
 
@@ -49,8 +87,9 @@ public partial class StreetView : Control
                 DisplayPicked?.Invoke(display);
             else if (hits[i].Item is Customer customer)
                 CustomerPicked?.Invoke(customer);
-            break;
+            return;
         }
+        EmptyFloorPicked?.Invoke();
     }
 
     public override void _Draw()
@@ -125,23 +164,17 @@ public partial class StreetView : Control
             Ground(width - 2.5f + i * .33f, .68f, width - 2.25f + i * .33f, 1.55f, "f9d98359");
         }
 
-        if (Moving)
+        if (Placement.HasValue)
         {
-            for (int y = 1; y < 5; y++)
-            for (int x = 1; x < width - 1; x++)
-                if (State.CanPlace(x, y))
-                    Ground(x + .05f, y + .05f, x + .95f, y + .95f, "719e777f");
+            Cell hovered = FloorTile(GetLocalMousePosition());
+            foreach (Cell tile in BuildTiles)
+                Ground(tile.X + .065f, tile.Y + .065f, tile.X + .935f, tile.Y + .935f,
+                    tile == hovered ? "ead99b" : "55906e8c");
         }
 
         List<(float Depth, Action Paint)> props =
         [
-            (1.0f, () => Plant(.6f, .55f, 1.35f)),
-            (3.9f, () => Cabinet(.3f, 3.25f, .64f, 1.03f, 44, "a2694c", "c18a61")),
-            (width - .25f, () => Counter(width - 1.92f, 1.5f)),
-            (width - .72f, () => Person(width - .79f, 1.2f, 11, true, 0, 0)),
-            (width + 4.48f, () => Plant(width - .48f, 5.2f, .85f)),
             (width + 6.3f, () => Sign(width - 1.5f, 7.05f)),
-            (5.92f, () => Crate(.41f, 5.25f, .54f, "ac7452")),
             (1.5f, () => Pinboard(3.18f, 3.85f))
         ];
 
@@ -156,17 +189,32 @@ public partial class StreetView : Control
         }
 
         foreach (Display display in State.Displays)
-            props.Add((display.X + display.Y + .85f, () => Shelf(display)));
+        {
+            props.Add((display.X + display.Y + 1f, () => Shelf(display)));
+            if (display.Style == Fixture.Register)
+                props.Add((display.X + display.Y + .57f,
+                    () => Figure(display.X + .62f, display.Y + .05f, 6, 2, 0)));
+        }
+
+        Cell tileUnderPointer = FloorTile(GetLocalMousePosition());
+        if (Placement is Fixture ghost && BuildTiles.Contains(tileUnderPointer))
+        {
+            Cell spot = tileUnderPointer;
+            props.Add((spot.X + spot.Y + 1f, () => Sprite(SpriteName(ghost), spot.X + .5f, spot.Y + .5f, SpriteSpan(ghost),
+                tint: new Color(1, 1, 1, .70f))));
+        }
 
         foreach (Customer customer in State.Customers)
         {
-            Vector2 point = CustomerPosition(customer);
+            Vector2 point = positions.GetValueOrDefault(customer, CustomerPosition(customer));
             props.Add((point.X + point.Y, () => DrawCustomer(customer, point)));
         }
 
         DrawProps(props);
+        if (State.Register is Display register)
+            CheckoutFeedback(register);
         Tree(-.9f, 7.55f, .83f);
-        Planter(width + 1.37f, .85f, .82f);
+        Sprite("PlantTall", width + 1.42f, .86f, 1.5f);
     }
 
     private void Workshop()
@@ -180,23 +228,21 @@ public partial class StreetView : Control
         for (int i = 0; i < 9; i++)
             Ground(1.45f + i * .41f, 2.41f, 1.61f + i * .41f, 3.93f, "b6b29254");
 
-        Cabinet(.25f, 1.02f, .61f, .91f, 53, "749182", "96a793");
-        Cabinet(4.74f, .2f, 1.68f, .85f, 38, "a56d4b", "bf8c63");
+        Sprite("Cabinet", .59f, 1.44f);
+        Sprite("Cabinet", 5.49f, .59f);
         for (int i = 0; i < 3; i++)
             Crate(.48f + i * .68f, .5f, .56f, i == 1 ? "a7855f" : "bb8b5d");
-        Plant(6.36f, .59f, 1.2f);
-        Person(3.08f, 1.94f, 27, true, State.Orders.Count > 0 ? Mathf.Sin(clock * 5) * 1.8f : 0, 0);
+        Sprite("PlantTall", 6.36f, .59f, 1.5f);
+        Figure(3.08f, 1.94f, 7, 1, 0);
         Bench(2.16f, 2.69f);
-        Cabinet(5.58f, 2.4f, .81f, 1.35f, 53, "768d80", "94a998");
-        Box(5.71f, 2.68f, .53f, .63f, 54, 65, "6c8f95");
-        Box(5.81f, 2.83f, .44f, .37f, 65, 72, "dcbd78");
+        Sprite("Cabinet", 6.03f, 2.94f);
         Box(.64f, 3.7f, .54f, .58f, 15, 27, "e0b674");
         Crate(.31f, 3.59f, .76f, "ab7750");
         Crate(.84f, 4.48f, .63f, "bc9060");
         Crate(4.51f, 4.8f, .62f, "ae7d54");
         Crate(5.27f, 4.6f, .68f, "b08457");
         Crate(5.79f, 4.93f, .58f, "af8459");
-        Plant(.68f, 5.28f, 1.0f);
+        Sprite("Plant", .68f, 5.28f, 1.5f);
         Tree(-1.11f, 7.45f, .84f);
     }
 
@@ -226,11 +272,11 @@ public partial class StreetView : Control
             Pixel(drop.X, drop.Y, 2, 3, "d7e2c4");
         }
 
-        Person(3.24f + Mathf.Sin(clock * .65f) * .35f, 4.3f, 19, false, 1, 0);
-        Person(6.54f, 4.85f, 7, false, 0, 0);
-        Person(5.34f, 2.93f, 2, true, 0, 0);
+        Figure(3.24f + Mathf.Sin(clock * .65f) * .35f, 4.3f, 3, 1, 0);
+        Figure(6.54f, 4.85f, 5, 2, 0);
+        Figure(5.34f, 2.93f, 2, 2, 0);
         if (State.Fair)
-            Person(3.31f, 5.49f, 25, false, 0, 0);
+            Figure(3.31f, 5.49f, 0, 3, 0);
         Tree(1.15f, 7.03f, 1.23f);
         Planter(6.02f, 6.09f, .92f);
     }
@@ -331,86 +377,44 @@ public partial class StreetView : Control
         }
     }
 
-    private void Cabinet(float x, float y, float w, float d, float height, string frame, string lip)
-    {
-        Box(x, y, w, d, 0, height, frame);
-        Box(x - .035f, y - .035f, w + .07f, d + .07f, height - 5, height, lip);
-        Segment(P(x, y + d, height * .52f), P(x + w, y + d, height * .52f), "644f434d", 2);
-        Segment(P(x + w * .43f, y + d + .005f, height * .59f), P(x + w * .65f, y + d + .005f, height * .59f), "debe81", 2);
-        Segment(P(x + w * .43f, y + d + .005f, height * .35f), P(x + w * .65f, y + d + .005f, height * .35f), "debe81", 2);
-    }
-
     private void Shelf(Display display)
     {
-        float x = display.X + .025f;
-        float y = display.Y + .075f;
-        int height = display.Style == Fixture.Table ? 28 : 58;
-        Ground(x - .15f, y - .03f, x + 1.15f, y + 1.03f, "69583d43");
+        int x = display.X;
+        int y = display.Y;
+        Ground(x + .04f, y + .04f, x + .98f, y + .99f, "67553d48");
         if (display == Selected && Reading == null)
         {
-            Ground(x - .10f, y - .1f, x + 1.05f, y + 1.02f, "fff0ae");
-            Ground(x - .055f, y - .056f, x + .995f, y + .97f, "d6b274");
+            Ground(x, y, x + 1, y + 1, "fff0ae");
+            Ground(x + .045f, y + .045f, x + .955f, y + .955f, "d6b274");
         }
 
-        if (display.Style == Fixture.Table)
-        {
-            Box(x + .05f, y + .08f, .11f, .11f, 1, 26, "9e684e");
-            Box(x + .79f, y + .08f, .11f, .11f, 1, 26, "9e684e");
-            Box(x + .05f, y + .67f, .11f, .11f, 1, 26, "9e684e");
-            Box(x + .79f, y + .67f, .11f, .11f, 1, 26, "9e684e");
-            Box(x - .02f, y - .04f, 1.01f, .91f, 22, 28, "b76f59");
-            Ground(x + .09f, y + .065f, x + .88f, y + .73f, "e1ad7c", 28.1f);
-            foreach (int i in Enumerable.Range(0, Math.Min(display.Count, 5)))
-                ToyArt.Draw(this, display.Toy, P(x + .24f + i % 3 * .235f, y + .21f + i / 3 * .36f, 29), scale * .77f);
-        }
-        else
-        {
-            string trim = display.Toy == 1 ? "7a9b91" : "c68f6e";
-            Box(x, y, .92f, .14f, 0, 43, "9f724f");
-            Box(x, y, .1f, .72f, 0, 30, "aa744f");
-            Box(x + .83f, y, .1f, .72f, 0, 30, "a97752");
-            Box(x, y, .94f, .75f, 4, 11, "bb8558");
-            for (int i = 0; i < display.Count - 3; i++)
-                ToyArt.Draw(this, display.Toy, P(x + .3f + i * .36f, y + .53f, 12), scale * .86f);
-            Box(x - .03f, y - .035f, 1f, .83f, 27, 32, trim);
-            for (int i = 0; i < Math.Min(display.Count, 3); i++)
-                ToyArt.Draw(this, display.Toy, P(x + .23f + i * .265f, y + .32f + i % 2 * .23f, 33), scale * .99f);
-            Segment(P(x - .018f, y + .8f, 31), P(x + .94f, y + .8f, 31), "ead2a5", 1);
-        }
+        Sprite(SpriteName(display.Style), x + .5f, y + .5f, SpriteSpan(display.Style));
+        float surface = display.Style == Fixture.Table ? 31 : 35;
+        for (int i = 0; i < Math.Min(display.Count, display.Style == Fixture.Table ? 6 : 4); i++)
+            ToyArt.Draw(this, display.Toy, P(x + .24f + i % 3 * .24f, y + .38f + i / 3 * .25f, surface), scale * .83f);
 
-        Vector2 tag = P(x + .5f, y + .85f, display.Style == Fixture.Table ? 25 : 29);
-        Pixel(tag.X - 6, tag.Y - 4, 13, 7, display.Count > 0 ? "ecd7a3" : "ca7359");
-        Vector2 top = P(x + .47f, y + .35f, height - 6);
-        hits.Add((new Rect2(top.X - 39 * scale, top.Y - 19 * scale, 78 * scale, (height + 33) * scale), display));
-    }
-
-    private void Counter(float x, float y)
-    {
-        Cabinet(x, y, 1.35f, .64f, 35, "63857b", "a4b39c");
-        Box(x + .81f, y + .23f, .39f, .31f, 35, 42, "495957");
-        Box(x + .86f, y + .23f, .25f, .14f, 42, 49, "758780");
-        Ground(x + .17f, y + .2f, x + .59f, y + .48f, "efd9a8", 35.2f);
-        Segment(P(x + .26f, y + .24f, 36), P(x + .5f, y + .24f, 36), "af876b", 1);
+        Vector2 p = P(x + .5f, y + .5f);
+        float halfWidth = display.Style == Fixture.Plant ? 19 : 37;
+        float height = display.Style == Fixture.Plant ? 35 : 53;
+        hits.Add((new Rect2(p.X - halfWidth * scale, p.Y - height * scale, halfWidth * 2 * scale, (height + 13) * scale), display));
     }
 
     private void Bench(float x, float y)
     {
-        Box(x + .12f, y + .09f, .15f, .15f, 0, 37, "8d6149");
-        Box(x + 1.84f, y + .09f, .15f, .15f, 0, 37, "8d6149");
-        Box(x + .12f, y + .7f, .15f, .15f, 0, 37, "8d6149");
-        Box(x + 1.84f, y + .7f, .15f, .15f, 0, 37, "8d6149");
-        Box(x, y, 2.15f, 1.01f, 33, 41, "ab7754");
-        Ground(x + .14f, y + .2f, x + .79f, y + .77f, "73999b", 41.1f);
-        for (int i = 0; i < 4; i++)
-            Segment(P(x + .24f, y + .29f + i * .09f, 41.4f), P(x + .68f, y + .29f + i * .09f, 41.4f), "bbceb387", 1);
+        Sprite("Bench", x + 1.08f, y + .49f, 3.4f);
         int toy = State.Orders.Count > 0 ? State.Orders[0].Toy : 1;
-        ToyArt.Draw(this, toy, P(x + 1.18f, y + .45f, 42), scale * 1.21f);
-        Box(x + 1.65f, y + .35f, .27f, .38f, 41, 45, "76584b");
-        if (State.Orders.Count > 0 && (int)(clock * 5) % 4 == 0)
+        ToyArt.Draw(this, toy, P(x + 1.18f, y + .45f, 39), scale * 1.21f);
+        if (benchFlash > 0 && !ReducedMotion)
         {
-            Vector2 glint = P(x + 1.32f, y + .46f, 67);
-            Pixel(glint.X, glint.Y - 3, 2, 8, "f1d68c");
-            Pixel(glint.X - 3, glint.Y, 8, 2, "f1d68c");
+            Vector2 glint = P(x + 1.18f, y + .46f, 52);
+            float progress = 1 - benchFlash / .38f;
+            Color color = ToyArt.C(cutCleanly ? "ffdf92" : "c76957");
+            color.A = 1 - progress;
+            for (int i = 0; i < 5; i++)
+            {
+                Vector2 offset = Vector2.FromAngle(-.37f - i * .54f) * ((7 + 28 * progress) * scale);
+                DrawCircle(glint + offset, (2.3f - progress) * scale, color);
+            }
         }
     }
 
@@ -535,86 +539,111 @@ public partial class StreetView : Control
         }
     }
 
-    private Vector2 CustomerPosition(Customer customer)
+    private static Vector2 CustomerPosition(Customer customer)
     {
-        Vector2 entry = new(State.Width - 1.12f, 5.68f);
-        Vector2 aisle = new(customer.TargetX + .34f, 5.34f);
-        Vector2 target = new(customer.TargetX + .44f, customer.TargetY + 1.09f);
-        float elapsed = (float)customer.Age;
-        if (elapsed < 5)
-            return entry.Lerp(aisle, elapsed / 5);
-        if (elapsed < 14)
-            return aisle.Lerp(target, (elapsed - 5) / 9);
-        if (elapsed < 32)
-            return target;
-        if (elapsed < 42)
-            return target.Lerp(aisle, (elapsed - 32) / 10);
-        return aisle.Lerp(entry, Mathf.Clamp((elapsed - 42) / 10, 0, 1));
+        Vector2 point = new(customer.Position.X + .5f, customer.Position.Y + .5f);
+        if (!customer.Walking)
+            return point;
+        Cell next = customer.Route[0];
+        return point.Lerp(new Vector2(next.X + .5f, next.Y + .5f), (float)customer.Travel);
     }
 
     private void DrawCustomer(Customer customer, Vector2 point)
     {
-        bool walking = customer.Age is < 14 or >= 32;
-        float step = walking ? Mathf.Sin(clock * 15 + customer.Appearance) : 0;
-        Person(point.X, point.Y, customer.Appearance, false, Mathf.Abs(step) * 2, step);
+        Cell facing = customer.Walking ? customer.Route[0] :
+            customer.Phase == VisitPhase.Checkout && State.Register is Display register ? new Cell(register.X, register.Y) :
+            customer.DisplayCell ?? customer.Position;
+        int direction = facing.X > customer.Position.X ? 2 : facing.X < customer.Position.X ? 0 :
+            facing.Y < customer.Position.Y ? 3 : 1;
+        int frame = customer.Walking && !ReducedMotion ? 1 + (int)(clock * 12 + customer.Appearance) % 7 : 0;
+        Figure(point.X, point.Y, customer.Appearance % 6, direction, frame);
         Vector2 p = P(point.X, point.Y);
-        if (customer.Result != 0 || customer == Reading)
+        if (customer.Basket.Count > 0)
         {
-            string bubble = customer.Result < 0 ? "cd987b" : "ead7a0";
-            Pixel(p.X - 9 * scale, p.Y - 65 * scale, 18, 13, "4b605a");
-            Pixel(p.X - 8 * scale, p.Y - 64 * scale, 16, 11, bubble);
-            Pixel(p.X - 2 * scale, p.Y - 53 * scale, 4, 3, bubble);
-            Pixel(p.X - 4 * scale, p.Y - 61 * scale, 2, 2, "515349");
-            Pixel(p.X + 3 * scale, p.Y - 61 * scale, 2, 2, "515349");
-            Pixel(p.X - 2 * scale, p.Y - (customer.Result < 0 ? 59 : 57) * scale, 5, 1, "515349");
+            float x = p.X + (direction is 0 or 1 ? -16 : 7) * scale;
+            float y = p.Y - 21 * scale;
+            Pixel(x + 2 * scale, y - 3 * scale, 6, 4, "956549");
+            Pixel(x, y, 10, 10, customer.Result == 1 ? "b68659" : "e6c089");
+            Pixel(x + 7 * scale, y, 3, 10, "a77956");
         }
-        hits.Add((new Rect2(p.X - 21 * scale, p.Y - 58 * scale, 42 * scale, 61 * scale), customer));
+        if (customer == Reading)
+        {
+            Pixel(p.X - 13 * scale, p.Y - 84 * scale, 26, 25, "47594c");
+            Pixel(p.X - 12 * scale, p.Y - 83 * scale, 24, 23, "f3d9a3");
+            ToyArt.Draw(this, customer.Wanted, p - new Vector2(0, 62 * scale), scale * .89f);
+        }
+        hits.Add((new Rect2(p.X - 17 * scale, p.Y - 57 * scale, 34 * scale, 60 * scale), customer));
     }
 
-    private void Person(float x, float y, int style, bool clerk, float bob, float step)
+    private void Figure(float x, float y, int style, int direction, int frame)
     {
-        Ground(x - .2f, y - .15f, x + .31f, y + .27f, "4c413c50");
-        Vector2 p = P(x, y, bob);
-        string[] shirts = ["ab635b", "5a8e87", "c89e53", "637e9b", "97778c", "9a9667"];
-        string[] skins = ["f0bc87", "d4946e", "a9674d", "e4ad87"];
-        string[] hair = ["654c3b", "b87949", "4e4340", "8b533b", "ce9e60", "564641"];
-        string skin = skins[style / 6 % skins.Length];
-        string top = shirts[style % shirts.Length];
-        string cap = hair[style / 3 % hair.Length];
+        Ground(x - .16f, y - .13f, x + .21f, y + .21f, "4c413c4a");
+        float size = 123 * scale;
+        Vector2 p = P(x, y);
+        DrawTextureRectRegion(Texture($"Person{style}"),
+            new Rect2(p - new Vector2(size * .5f, size * .71f), new Vector2(size, size)),
+            new Rect2(frame * 112, direction * 112, 112, 112));
+    }
 
-        Rect(-9, -10 + step * 3, 7, 9, "4a5454");
-        Rect(2, -10 - step * 3, 7, 9, "55615f");
-        Rect(-10, -3 + step * 3, 8, 4, "49504a");
-        Rect(2, -3 - step * 3, 9, 4, "49504a");
-        Rect(-11, -24, 22, 16, top);
-        Rect(-13, -20 - step, 5, 10, ToyArt.C(top).Darkened(.15f).ToHtml());
-        Rect(10, -20 + step, 5, 10, top);
-        Rect(-13, -12 - step, 4, 4, skin);
-        Rect(11, -12 + step, 4, 4, skin);
-        if (clerk)
+    private void CheckoutFeedback(Display register)
+    {
+        Vector2 p = P(register.X + .5f, register.Y + .5f, 54);
+        if (State.ReadyToPay != null)
         {
-            Rect(-5, -24, 11, 15, "e0c084");
-            Rect(-3, -16, 7, 4, "b79670");
+            DrawCircle(p - new Vector2(0, 5), 9, ToyArt.C("3a5d4f"));
+            DrawCircle(p - new Vector2(0, 5), 6.5f, ToyArt.C("efd094"));
         }
-        Rect(-5, -28, 10, 6, skin);
-        Rect(-12, -47, 25, 17, cap);
-        Rect(-9, -51, 19, 9, cap);
-        Rect(-8, -43, 19, 14, skin);
-        Rect(-5, -30, 13, 4, skin);
-        Rect(-12, -45, 7, 10, cap);
-        Rect(-12, -47, 20, 6, cap);
-        Rect(-2, -38, 2, 3, "4a3f3c");
-        Rect(6, -39, 2, 3, "4a3f3c");
-        Rect(2, -33, 5, 2, ToyArt.C(skin).Darkened(.18f).ToHtml());
-        if (style % 4 == 1)
+        for (int i = 0; i < sales.Count; i++)
         {
-            Rect(-13, -51, 26, 5, top);
-            Rect(-9, -55, 18, 6, top);
-            Rect(6, -48, 10, 3, ToyArt.C(top).Darkened(.12f).ToHtml());
+            var sale = sales[i];
+            float life = sale.Age / 1.36f;
+            float alpha = 1 - Mathf.SmoothStep(.57f, 1f, life);
+            float rise = ReducedMotion ? 16 : 9 + 46 * Mathf.Ease(life, .65f);
+            Vector2 at = p + new Vector2(-23 + i * 9, -rise);
+            string text = $"+${sale.Amount}";
+            Color shadow = ToyArt.C("304f3c");
+            Color gold = ToyArt.C("fff1b3");
+            shadow.A = gold.A = alpha;
+            Font font = ThemeDB.FallbackFont;
+            DrawString(font, at + new Vector2(1, 2), text, fontSize: 21, modulate: shadow);
+            DrawString(font, at, text, fontSize: 21, modulate: gold);
+            if (ReducedMotion || life > .48f)
+                continue;
+            for (int spark = 0; spark < 4; spark++)
+            {
+                Vector2 d = Vector2.FromAngle(-.25f - spark * .92f) * (7 + life * 48);
+                DrawCircle(p + d, (1 - life) * 2, gold);
+            }
         }
+    }
 
-        void Rect(float dx, float dy, float w, float h, string color) =>
-            Pixel(p.X + dx * scale, p.Y + dy * scale, w, h, color);
+    private void Sprite(string name, float x, float y, float span = 2.9f, Color? tint = null)
+    {
+        float size = span * 55.15f * scale;
+        Vector2 p = P(x, y);
+        DrawTextureRect(Texture(name), new Rect2(p - new Vector2(size / 2, size / 2), new Vector2(size, size)),
+            false, tint ?? Colors.White);
+    }
+
+    internal static string SpriteName(Fixture fixture) => fixture switch
+    {
+        Fixture.Display => "Shelf", Fixture.Table => "Table", Fixture.Plant => "Plant", _ => "Register"
+    };
+
+    private static float SpriteSpan(Fixture fixture) => fixture == Fixture.Plant ? 1.5f : 2.9f;
+
+    private Texture2D Texture(string name)
+    {
+        if (!sprites.TryGetValue(name, out Texture2D? texture))
+            sprites[name] = texture = GD.Load<Texture2D>($"res://Art/Furniture/{name}.png");
+        return texture;
+    }
+
+    private Cell FloorTile(Vector2 mouse)
+    {
+        Vector2 point = (mouse - origin) / scale;
+        return new Cell(Mathf.FloorToInt((point.X / 39 + point.Y / 19.5f) / 2),
+            Mathf.FloorToInt((point.Y / 19.5f - point.X / 39) / 2));
     }
 
     private void DrawProps(List<(float Depth, Action Paint)> props)
