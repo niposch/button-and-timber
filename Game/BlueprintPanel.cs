@@ -258,6 +258,12 @@ public partial class ShopGame
     {
         craftPad = new Control { MouseFilter = MouseFilterEnum.Ignore };
         host.AddChild(craftPad);
+        host.Resized += () =>
+        {
+            float fit = Math.Clamp(host.Size.Y / 330f, .55f, 1f);
+            craftPad.Scale = new Vector2(fit, fit);
+            craftPad.PivotOffset = new Vector2(0, 182);
+        };
         AnchorTo(craftPad, LayoutPreset.BottomLeft, 28, -236, 210, -54);
         foreach (Tool tool in Tools)
         {

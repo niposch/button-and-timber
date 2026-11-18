@@ -159,6 +159,7 @@ public partial class ShopGame : Control
             Save();
 
         UpdateReadouts();
+        UpdateMusic();
     }
 
     public override void _Notification(int what)
@@ -228,6 +229,9 @@ public partial class ShopGame : Control
     private PanelContainer side = null!;
     private Control sideFooter = null!;
     private Control brandTitle = null!;
+    private Control demandBar = null!;
+    private Control leftColumn = null!;
+    private Control rankBlock = null!;
 
     private static PanelContainer Frame(string fill, string stroke, int corner, int padX, int padY)
     {
@@ -305,7 +309,8 @@ public partial class ShopGame : Control
         rankName = TextLabel("", 17, Light, true);
         rankMeter = Meter(7, true);
         rankMeter.CustomMinimumSize = new Vector2(120, 7);
-        stats.AddChild(Block(130, rankName, rankMeter, TextLabel("Rank", 13, Light)));
+        rankBlock = Block(130, rankName, rankMeter, TextLabel("Rank", 13, Light));
+        stats.AddChild(rankBlock);
         goal = TextLabel("", 15, Cream);
         goalProgress = Meter(9, true);
         goalProgress.CustomMinimumSize = new Vector2(190, 9);
@@ -360,6 +365,7 @@ public partial class ShopGame : Control
         VBoxContainer left = new() { SizeFlagsHorizontal = SizeFlags.ExpandFill, SizeFlagsVertical = SizeFlags.ExpandFill };
         left.AddThemeConstantOverride("separation", 8);
         body.AddChild(left);
+        leftColumn = left;
 
         HFlowContainer nav = new();
         nav.AddThemeConstantOverride("h_separation", 7);
@@ -398,7 +404,7 @@ public partial class ShopGame : Control
         Control host = new()
         {
             SizeFlagsHorizontal = SizeFlags.ExpandFill, SizeFlagsVertical = SizeFlags.ExpandFill,
-            CustomMinimumSize = new Vector2(0, 220), ClipContents = true
+            CustomMinimumSize = new Vector2(0, 150), ClipContents = true
         };
         left.AddChild(host);
         Panel frame = new() { MouseFilter = MouseFilterEnum.Ignore };
@@ -432,6 +438,7 @@ public partial class ShopGame : Control
 
         PanelContainer demand = Frame("31483f", "476157", 6, 14, 8);
         left.AddChild(demand);
+        demandBar = demand;
         HFlowContainer demandRow = new();
         demandRow.AddThemeConstantOverride("h_separation", 9);
         demandRow.AddThemeConstantOverride("v_separation", 6);
@@ -532,6 +539,7 @@ public partial class ShopGame : Control
         warning = Sound("error_003");
         coins = Sound("glass_005");
         MakeShopAudio();
+        MakeMusic();
 
         Resized += ApplyLayout;
         GetWindow().SizeChanged += ApplyScale;
@@ -547,7 +555,7 @@ public partial class ShopGame : Control
         window.ContentScaleAspect = Window.ContentScaleAspectEnum.Expand;
         window.ContentScaleSize = Vector2I.Zero;
         window.ContentScaleFactor = pixels.X < pixels.Y
-            ? Math.Clamp(pixels.X / 540f, 1f, 3f)
+            ? Math.Clamp(pixels.X / 520f, .5f, 3f)
             : Math.Clamp(Math.Min(pixels.X / 1180f, pixels.Y / 720f), .75f, 2.5f);
     }
 
@@ -559,9 +567,12 @@ public partial class ShopGame : Control
         Vector2 size = Size;
         bool portrait = size.X < 780 || size.X < size.Y;
         body.Vertical = portrait;
-        side.CustomMinimumSize = portrait
-            ? new Vector2(0, Math.Clamp(size.Y * .42f, 250, 520))
-            : new Vector2(Math.Clamp(size.X * .29f, 350, 480), 0);
+        side.CustomMinimumSize = portrait ? new Vector2(0, 250) : new Vector2(Math.Clamp(size.X * .29f, 350, 480), 0);
+        side.SizeFlagsVertical = portrait ? SizeFlags.ExpandFill : SizeFlags.Fill;
+        side.SizeFlagsStretchRatio = 1.5f;
+        leftColumn.SizeFlagsStretchRatio = 1;
+        demandBar.Visible = !portrait || size.Y >= 820;
+        rankBlock.Visible = !portrait;
         brandTitle.Visible = size.X >= 1060;
         daysLeft.Visible = !portrait;
     }

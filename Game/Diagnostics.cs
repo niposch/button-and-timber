@@ -245,6 +245,7 @@ public partial class ShopGame
             TestProductionLine();
             TestDecorAndStorage();
             TestStreetTraffic();
+            TestProgression();
             PlayCampaign();
             GD.Print("Smoke test passed: shop controls, stockroom, crafting, street traffic and lighting, saves, and campaign.");
             GetTree().Quit();
@@ -583,6 +584,30 @@ public partial class ShopGame
             Check(display != null, "display for campaign");
             run.Assign(display!, toy);
         }
+    }
+
+    private static void TestProgression()
+    {
+        ShopState run = new() { Schema = ShopState.CurrentSchema, Cash = 1000 };
+        Check(run.Rank == 0 && run.MaxTier == 2 && !run.CanHire((int)StaffRole.Cashier), "new shops start as stallholders");
+        run.GainRenown(Progress.RankRenown[2]);
+        Check(run.Rank == 2 && run.MaxTier == 3 && run.CanHire((int)StaffRole.Cashier), "renown raises rank");
+        Check(run.Hire((int)StaffRole.Cashier) && run.CheckoutWait == 3 && run.Wages == 12, "hired cashier speeds checkout");
+        Check(run.ChooseStyle(Philosophy.Volume) && run.ToyCost(Catalog.Engine) < Catalog.Toys[Catalog.Engine].Materials,
+            "volume style cuts material cost");
+        Check(!run.ChooseStyle(Philosophy.Showman) || run.Cash < 1000, "changing style costs money");
+        Check(run.Hired[(int)StaffRole.Cashier] && run.Dismiss((int)StaffRole.Cashier) && run.Wages == 0, "staff can be let go");
+
+        Customer haggler = new() { Kind = Archetype.Bargain, Wanted = Catalog.Engine };
+        Customer tourist = new() { Kind = Archetype.Tourist, Wanted = Catalog.Engine };
+        Check(run.Tolerance(tourist, Catalog.Engine, true) > run.Tolerance(haggler, Catalog.Engine, true),
+            "bargain hunters tolerate less markup than tourists");
+
+        ShopState saved = JsonSerializer.Deserialize(JsonSerializer.Serialize(run, DaybookJson.Default.ShopState),
+            DaybookJson.Default.ShopState)!;
+        saved.Regulars.Add(new Regular { Name = "Test", Affinity = 12 });
+        Check(saved.Renown == run.Renown && saved.Style == run.Style && saved.Regulars[0].Bond == 1, "progression round-trips through saves");
+        Check(new ShopState { Day = 25, Cash = 5000, YearStartCash = 5000 }.YearTarget > 5000 + 1600, "later years ask for more");
     }
 
     private static void PlayCampaign()
