@@ -10,7 +10,7 @@ public partial class ShopGame
         await ToSignal(RenderingServer.Singleton, RenderingServer.SignalName.FramePostDraw);
         string prefix = Path.GetFullPath(destination);
         Directory.CreateDirectory(Path.GetDirectoryName(prefix)!);
-        for (int index = 0; index < 16; index++)
+        for (int index = 0; index < 20; index++)
         {
             OpenRoom(index < 3 ? (Room)index : index is 4 or 5 ? Room.Workshop : Room.Shop);
             stage.SnapCamera();
@@ -23,7 +23,7 @@ public partial class ShopGame
             if (index == 3)
             {
                 Furnish(state);
-                state.Displays.First(d => d.Style == Fixture.Display).Flipped = true;
+                state.Displays.First(d => d.Style == Fixture.Display).Turn = 1;
                 state.Open();
                 for (int tick = 0; tick < 140 && state.ReadyToPay == null; tick++)
                     state.AdvanceShop(1);
@@ -146,6 +146,23 @@ public partial class ShopGame
                 OpenRoom(Room.Shop);
                 summary = true;
                 Rebuild();
+            }
+
+            if (index >= 16)
+            {
+                summary = false;
+                state.Shift = Shift.Setup;
+                state.Customers.Clear();
+                state.Day = 3;
+                state.Minute = 0;
+                if (state.Register is Display till)
+                    state.TurnFixture(till, 1);
+                state.Replenish();
+                state.Open();
+                for (int tick = 0; tick < 300 && state.ReadyToPay == null; tick++)
+                    state.AdvanceShop(1);
+                OpenRoom(Room.Shop);
+                speed = 0;
             }
 
             UpdateReadouts();
@@ -639,6 +656,26 @@ public partial class ShopGame
             DaybookJson.Default.ShopState)!;
         saved.Regulars.Add(new Regular { Name = "Test", Affinity = 12 });
         Check(saved.Renown == run.Renown && saved.Style == run.Style && saved.Regulars[0].Bond == 1, "progression round-trips through saves");
+        for (int facing = 0; facing < 4; facing++)
+        {
+            ShopState till = new() { Schema = ShopState.CurrentSchema };
+            Furnish(till);
+            Display counter = till.Register!;
+            for (int i = 0; i < 4 && counter.Turn != facing; i++)
+                Check(till.TurnFixture(counter, 1), "register turns through every walkable side");
+            Check(counter.Turn == facing, $"register faces {facing}");
+            Check(till.Open(), "register shop opens");
+            for (int tick = 0; tick < 900 && till.ReadyToPay == null; tick++)
+                till.AdvanceShop(1);
+            Check(till.ReadyToPay != null && till.ReadyToPay.Position == ShopState.FrontOf(counter),
+                $"shoppers pay at the front of a register facing {facing}");
+        }
+        ShopState blocked = new() { Schema = ShopState.CurrentSchema, Cash = 500 };
+        Display facingDesk = blocked.PlaceFixture(Fixture.Register, new Cell(3, 2))!;
+        Check(blocked.PlaceFixture(Fixture.Display, ShopState.FrontOf(facingDesk)) == null, "nothing may block a register's front");
+        blocked.Displays.Add(new Display { X = 3, Y = 3, Style = Fixture.Display });
+        Check(blocked.ResolveTurn(Fixture.Register, new Cell(3, 2), 0, facingDesk) != 0, "a blocked register front picks another side");
+
         ShopState board = new() { Schema = ShopState.CurrentSchema, Cash = 500, Renown = 300 };
         board.Day = 3;
         for (int i = 0; i < 20 && board.Board.Count == 0; i++)

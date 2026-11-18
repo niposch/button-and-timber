@@ -9,7 +9,7 @@ public partial class StreetView : Control
     internal Display? Selected { get; set; }
     internal Customer? Reading { get; set; }
     internal Fixture? Placement { get; set; }
-    internal bool PlacementFlipped { get; set; }
+    internal int PlacementTurn { get; set; }
     internal HashSet<Cell> BuildTiles { get; set; } = [];
     internal bool ReducedMotion { get; set; }
     internal bool Paused { get; set; }
@@ -327,16 +327,23 @@ public partial class StreetView : Control
         {
             props.Add((display.X + display.Y + 1f, () => Shelf(display)));
             if (display.Style == Fixture.Register)
-                props.Add((display.X + display.Y + .57f,
-                    () => Figure(display.X + .62f, display.Y + .05f, 6, 2, 0)));
+            {
+                Cell front = ShopState.FrontOf(display);
+                float dx = front.X - display.X;
+                float dy = front.Y - display.Y;
+                float cx = display.X + .5f - dx * .45f;
+                float cy = display.Y + .5f - dy * .45f;
+                int facing = dy > 0 ? 1 : dy < 0 ? 3 : dx > 0 ? 2 : 0;
+                props.Add((cx + cy + .02f, () => Figure(cx, cy, 6, facing, 0)));
+            }
         }
 
         Cell tileUnderPointer = FloorTile(GetLocalMousePosition());
         if (Placement is Fixture ghost && BuildTiles.Contains(tileUnderPointer))
         {
             Cell spot = tileUnderPointer;
-            props.Add((spot.X + spot.Y + 1f, () => Sprite(SpriteName(ghost), spot.X + .5f, spot.Y + .5f, SpriteSpan(ghost),
-                tint: new Color(1, 1, 1, .70f), flip: PlacementFlipped)));
+            props.Add((spot.X + spot.Y + 1f, () => Sprite(TurnedName(ghost, State.ResolveTurn(ghost, spot, PlacementTurn, ghost == Fixture.Register ? State.Register : null)), spot.X + .5f, spot.Y + .5f, SpriteSpan(ghost),
+                tint: new Color(1, 1, 1, .70f))));
         }
 
         foreach (Customer customer in State.Customers)
@@ -594,7 +601,7 @@ public partial class StreetView : Control
             Ground(x + .045f, y + .045f, x + .955f, y + .955f, "d6b274");
         }
 
-        Sprite(SpriteName(display.Style), x + .5f, y + .5f, SpriteSpan(display.Style), flip: display.Flipped);
+        Sprite(TurnedName(display.Style, display.Turn), x + .5f, y + .5f, SpriteSpan(display.Style));
         float surface = display.Style == Fixture.Table ? 31 : 35;
         for (int i = 0; i < Math.Min(display.Count, display.Style == Fixture.Table ? 6 : 4); i++)
             ToyArt.Draw(this, display.Toy, P(x + .24f + i % 3 * .24f, y + .38f + i / 3 * .25f, surface), scale * .83f);
@@ -927,17 +934,16 @@ public partial class StreetView : Control
         }
     }
 
-    private void Sprite(string name, float x, float y, float span = 2.9f, Color? tint = null, bool flip = false)
+    private void Sprite(string name, float x, float y, float span = 2.9f, Color? tint = null)
     {
         float size = span * 55.15f * scale;
         Vector2 p = P(x, y);
-        if (flip)
-            DrawSetTransform(new Vector2(p.X * 2, 0), 0, new Vector2(-1, 1));
         DrawTextureRect(Texture(name), new Rect2(p - new Vector2(size / 2, size / 2), new Vector2(size, size)),
             false, Ambient(tint ?? Colors.White));
-        if (flip)
-            DrawSetTransform(Vector2.Zero, 0, Vector2.One);
     }
+
+    internal static string TurnedName(Fixture fixture, int turn) =>
+        turn == 0 || fixture == Fixture.Plant ? SpriteName(fixture) : $"{SpriteName(fixture)}_{turn}";
 
     internal static string SpriteName(Fixture fixture) => fixture switch
     {

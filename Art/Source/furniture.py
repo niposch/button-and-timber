@@ -134,14 +134,15 @@ def tool(index):
             box("Thread ridges", .155, -.28 + i * .047, .225, .028, .018, .163, EDGE, .006)
 
 
-def scene(name, source, span=2.9):
+def scene(name, source, span=2.9, turn=0):
     bpy.ops.scene.new(type="NEW")
     current = bpy.context.scene
     current.name = name
     source()
     cam = bpy.data.objects.new("Isometric sprite camera", bpy.data.cameras.new("Isometric"))
     current.collection.objects.link(cam)
-    cam.location = (6, 6, math.sqrt(24))
+    angle = turn * math.pi / 2
+    cam.location = (6 * math.cos(angle) - 6 * math.sin(angle), 6 * math.sin(angle) + 6 * math.cos(angle), math.sqrt(24))
     cam.rotation_euler = (-cam.location).to_track_quat("-Z", "Y").to_euler()
     cam.data.type = "ORTHO"
     cam.data.ortho_scale = span
@@ -152,7 +153,8 @@ def scene(name, source, span=2.9):
     current.render.resolution_x = 192
     current.render.resolution_y = 192
     current.render.resolution_percentage = 100
-    current.render.filepath = str(OUT / (name + ".png"))
+    label = name if turn == 0 else f"{name}_{turn}"
+    current.render.filepath = str(OUT / (label + ".png"))
     shading = current.display.shading
     shading.light = "STUDIO"
     shading.studiolight_rotate_z = .45
@@ -165,7 +167,7 @@ def scene(name, source, span=2.9):
     current.view_settings.view_transform = "Standard"
     current.view_settings.exposure = .72
     bpy.ops.render.render(write_still=True)
-    current.render.filepath = "//../Furniture/" + name + ".png"
+    current.render.filepath = "//../Furniture/" + label + ".png"
 
 
 if __name__ == "__main__":

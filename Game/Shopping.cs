@@ -173,10 +173,17 @@ internal sealed partial class ShopState
             return false;
 
         Dictionary<Cell, Cell> walkable = Reachable(Entry, blocked);
+        if (Register is Display till && till != moving)
+        {
+            Cell front = FrontOf(till);
+            HashSet<Cell> before = Displays.Where(display => display != moving).Select(At).ToHashSet();
+            if (Reachable(Entry, before).ContainsKey(front) && !walkable.ContainsKey(front))
+                return false;
+        }
         return blocked.All(place => place.Neighbors().Any(walkable.ContainsKey));
     }
 
-    public Display? PlaceFixture(Fixture fixture, Cell tile, bool flipped = false)
+    public Display? PlaceFixture(Fixture fixture, Cell tile, int turn = 0)
     {
         int price = FurnitureCost(fixture);
         bool owned = Furniture[(int)fixture] > 0;
@@ -189,18 +196,62 @@ internal sealed partial class ShopState
         else
             Spend(price);
 
-        Display item = new() { X = tile.X, Y = tile.Y, Style = fixture, Flipped = flipped };
+        Display item = new() { X = tile.X, Y = tile.Y, Style = fixture, Turn = ResolveTurn(fixture, tile, turn, null) };
         Displays.Add(item);
         return item;
     }
 
-    public bool Move(Display display, Cell tile)
+    public bool Move(Display display, Cell tile, int? turn = null)
     {
         if (Shift == Shift.Open || !CanPlace(tile, display))
             return false;
+        display.Turn = ResolveTurn(display.Style, tile, turn ?? display.Turn, display);
         display.X = tile.X;
         display.Y = tile.Y;
         return true;
+    }
+
+    private static readonly Cell[] Fronts = [new(0, 1), new(-1, 0), new(0, -1), new(1, 0)];
+
+    /// <summary>The tile a register faces, where shoppers queue and pay.</summary>
+    public static Cell FrontOf(Display display) =>
+        new(display.X + Fronts[display.Turn].X, display.Y + Fronts[display.Turn].Y);
+
+    private bool FrontWalkable(Cell tile, int turn, Display? moving)
+    {
+        Cell front = new(tile.X + Fronts[turn].X, tile.Y + Fronts[turn].Y);
+        HashSet<Cell> blocked = Displays.Where(display => display != moving).Select(At).ToHashSet();
+        blocked.Add(tile);
+        return Reachable(Entry, blocked).ContainsKey(front);
+    }
+
+    /// <summary>Registers must face a tile shoppers can reach, so pick the nearest turn that does.</summary>
+    public int ResolveTurn(Fixture fixture, Cell tile, int turn, Display? moving)
+    {
+        turn = (turn % 4 + 4) % 4;
+        if (fixture != Fixture.Register)
+            return turn;
+        for (int i = 0; i < 4; i++)
+            if (FrontWalkable(tile, (turn + i) % 4, moving))
+                return (turn + i) % 4;
+        return turn;
+    }
+
+    public bool TurnFixture(Display display, int step)
+    {
+        if (Shift == Shift.Open)
+            return false;
+        for (int i = 1; i <= 4; i++)
+        {
+            int turn = ((display.Turn + step * i) % 4 + 4) % 4;
+            if (display.Style == Fixture.Register && !FrontWalkable(At(display), turn, display))
+                continue;
+            if (turn == display.Turn)
+                return false;
+            display.Turn = turn;
+            return true;
+        }
+        return false;
     }
 
     public bool Pack(Display display)
@@ -523,6 +574,8 @@ internal sealed partial class ShopState
             if (Register is not Display register)
                 return Entry;
             var paths = Paths(Entry);
+            if (paths.ContainsKey(FrontOf(register)))
+                return FrontOf(register);
             return At(register).Neighbors().Where(paths.ContainsKey).DefaultIfEmpty(Entry).First();
         }
     }

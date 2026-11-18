@@ -60,7 +60,7 @@ internal sealed class Display
     public int Toy { get; set; } = -1;
     public int Count { get; set; }
     public Fixture Style { get; set; }
-    public bool Flipped { get; set; }
+    public int Turn { get; set; }
     public int Capacity => Style switch { Fixture.Table => 7, Fixture.Display => 5, _ => 0 };
 }
 

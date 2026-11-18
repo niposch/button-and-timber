@@ -23,7 +23,7 @@ Press **1**, **2**, and **3** to switch rooms. Press **Space** for the current s
 
 ## Art and sound
 
-- The furniture, tools, workshop stations, carts, and seasonal decorations were made in Blender. Edit `Art/Source/Furniture.blend`, `Art/Source/Workshop.blend`, or `Art/Source/Fixtures.blend` to change their meshes and render new sprites.
+- The furniture, tools, workshop stations, carts, and seasonal decorations were made in Blender. Run `blender --background --python Art/Source/rotations.py` to bake the quarter-turn views of every placeable piece. Edit `Art/Source/Furniture.blend`, `Art/Source/Workshop.blend`, or `Art/Source/Fixtures.blend` to change their meshes and render new sprites.
 - The animated shoppers are adapted from [Quaternius' Ultimate Animated Character Pack](https://quaternius.com/packs/ultimatedanimatedcharacter), the plants from [KayKit Furniture Bits](https://kaylousberg.itch.io/furniture-bits), and the interface audio from [Kenney Interface Sounds](https://kenney.nl/assets/interface-sounds). These packs are CC0 1.0.
 - Run Blender in background mode with `--python Art/Source/sprite_packs.py -- <character-zip> <furniture-zip>` to rebake the third-party sprites from the original downloads. The game ships with the PNGs ready to use.
 

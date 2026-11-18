@@ -23,7 +23,7 @@ public partial class ShopGame : Control
     private int quantity = 5;
     private int speed = 1;
     private bool moving;
-    private bool placingFlip;
+    private int placingTurn;
     private bool showDecor;
     private bool showWorkshopDecor;
     private Fixture? placing;
@@ -220,7 +220,7 @@ public partial class ShopGame : Control
             case Key.Escape when placing.HasValue: CancelPlacement(); break;
             case Key.Escape when showStockroom: ToggleStockroom(); break;
             case Key.M: ToggleSound(); break;
-            case Key.R: RotateFixture(); break;
+            case Key.R: RotateFixture(key.ShiftPressed ? -1 : 1); break;
             default: return;
         }
 
@@ -651,11 +651,10 @@ public partial class ShopGame : Control
 
         if (moving && selectedDisplay != null)
         {
-            if (!state.Move(selectedDisplay, cell))
+            if (!state.Move(selectedDisplay, cell, placingTurn))
                 return;
-            selectedDisplay.Flipped = placingFlip;
         }
-        else if (state.PlaceFixture(kind, cell, placingFlip) is Display item)
+        else if (state.PlaceFixture(kind, cell, placingTurn) is Display item)
             selectedDisplay = item;
         else
             return;
@@ -683,7 +682,7 @@ public partial class ShopGame : Control
         stage.Room = room;
         stage.MouseDefaultCursorShape = room == Room.Shop ? CursorShape.PointingHand : CursorShape.Arrow;
         stage.Placement = placing;
-        stage.PlacementFlipped = placingFlip;
+        stage.PlacementTurn = placingTurn;
         stage.BuildTiles = placing.HasValue ? ValidBuildTiles() : [];
         stage.Selected = selectedDisplay;
         stage.Reading = reading;
@@ -735,20 +734,25 @@ public partial class ShopGame : Control
         showStockroom = false;
         moving = relocate;
         placing = kind;
-        placingFlip = relocate && selectedDisplay != null ? selectedDisplay.Flipped : placingFlip;
+        placingTurn = relocate && selectedDisplay != null ? selectedDisplay.Turn : placingTurn;
         if (!relocate)
             selectedDisplay = null;
         status = "";
         Rebuild();
     }
 
-    private void RotateFixture()
+    private void RotateFixture(int step = 1)
     {
         if (placing.HasValue)
-            placingFlip = !placingFlip;
+            placingTurn = (placingTurn + step + 4) % 4;
         else if (selectedDisplay != null && state.Shift != Shift.Open && !summary && room == Room.Shop)
         {
-            selectedDisplay.Flipped = !selectedDisplay.Flipped;
+            if (!state.TurnFixture(selectedDisplay, step))
+            {
+                status = "There is no room to turn it.";
+                UpdateReadouts();
+                return;
+            }
             Play(wood, -16, 1.2f);
             Save();
         }
