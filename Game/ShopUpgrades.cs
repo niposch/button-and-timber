@@ -50,6 +50,15 @@ internal sealed partial class ShopState
     public int DispatchSpace(int toy) => Math.Max(0, StorageCapacity - StorageUsed) +
         Displays.Where(display => display.Toy == toy).Sum(display => display.Capacity - display.Count);
 
+    public bool DiscardStock(int toy, int units)
+    {
+        if (toy < 0 || toy >= Stock.Length || units <= 0 || units > Stock[toy])
+            return false;
+
+        Stock[toy] -= units;
+        return true;
+    }
+
     public bool RentMoreStorage()
     {
         if (!CanRentMore)

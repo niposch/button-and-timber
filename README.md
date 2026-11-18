@@ -10,10 +10,11 @@ Import `project.godot` in **Godot 4.7.2 .NET** with the **.NET SDK** installed. 
 - **Street** · Morning light marks setup, daylight marks trading, and streetlamps come on toward closing. Pedestrians follow the speed controls, walk through the shop door when they visit, and return to the sidewalk on their way out.
 - **Workshop** · Type up to 250 for a batch, or use **− / +**. Follow the tool bubble with **WASD**, the arrows, a controller D-pad, or the on-screen pad. Each machine handles a full pass before the cart carries the batch to its next station. **Set aside** saves unfinished work and **Resume** continues it using the same materials.
 - **Blueprints** · 22 toys span four tiers. Each blueprint has its own levels, costs, and yield. Follow the Pip Engine through the Signal Cabin and Train Yard to reach the Midnight Express.
-- **Orders** · Fill seasonal and showcase requests, upgrade cart capacity, or rent a larger stockroom. A full stockroom pauses finished output while the workshop holds the batch. Bigger stockrooms raise the rent charged at closing.
+- **Stockroom** · The top bar shows used and total space. Open it to rent more space or select a toy and discard a quantity from reserve. Batches waiting for space resume once there is room. Bigger stockrooms raise the rent charged at closing.
+- **Orders** · Fill seasonal and showcase requests or upgrade cart capacity.
 - **Till report** · Check sales, expenses, and unmet requests. The doors close at 6 PM after the last shopper finishes. The speed controls advance the shop and unattended bench. Tool prompts keep their real-time duration while you work them.
 
-Press **1**, **2**, and **3** to switch rooms. The daybook autosaves during play and when you close the game. **Options** has a manual save and a confirmed restart. Existing daybooks resume with their furnishings and progress. Use **New campaign** to try building from an empty shop.
+Press **1**, **2**, and **3** to switch rooms. Press **Space** for the current shop action, such as opening the shop, ringing up a ready customer, or starting the next day. The daybook autosaves during play and when you close the game. **Options** has a manual save and a confirmed restart. Existing daybooks resume with their furnishings and progress. Use **New campaign** to try building from an empty shop.
 
 ## Art and sound
 

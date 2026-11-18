@@ -183,7 +183,7 @@ public partial class ShopGame
     private void TownPanel()
     {
         Header("Town orders", "");
-        Upgrades();
+        CartUpgrade();
         Contract(Catalog.Fairs[state.Season], state.CommissionToy, state.CommissionCount, state.CommissionPay,
             () => state.Commissions[state.Season], () => state.Deliver());
         for (int index = 0; index < 2; index++)
@@ -268,28 +268,20 @@ public partial class ShopGame
         }
     }
 
-    private void Upgrades()
+    private void CartUpgrade()
     {
-        Label capacity = Line("", 14, Ink);
-        HBoxContainer first = Row();
-        Button storage = InButton(first, "", () =>
-        {
-            if (state.RentMoreStorage())
-                Changed();
-        });
-        Button cart = InButton(first, "", () =>
+        HBoxContainer row = Row();
+        Label capacity = In(row, "", 14, Ink, stretch: true);
+        Button cart = InButton(row, "", () =>
         {
             if (state.UpgradeCart())
                 Changed();
-        });
-        storage.TooltipText = "Rent a bigger stockroom. Rent comes out of the till at closing.";
+        }, 152);
         cart.TooltipText = "Carry more workpieces per trip between machines.";
         Sync(() =>
         {
-            capacity.Text = $"Stockroom {state.StorageUsed}/{state.StorageCapacity}   ·   Cart ×{state.CartCapacity}";
-            storage.Text = state.CanRentMore ? $"{state.NextStorageCapacity} · ${state.NextDailyRent}/day" : "Stockroom max";
-            cart.Text = state.CanUpgradeCart ? $"Cart ×{state.NextCartCapacity} · ${state.CartUpgradePrice}" : "Cart max";
-            storage.Disabled = !state.CanRentMore;
+            capacity.Text = $"Cart · ×{state.CartCapacity}";
+            cart.Text = state.CanUpgradeCart ? $"×{state.NextCartCapacity} · ${state.CartUpgradePrice}" : "Cart max";
             cart.Disabled = !state.CanUpgradeCart || state.Cash < state.CartUpgradePrice;
         });
         Divider();

@@ -10,7 +10,7 @@ public partial class ShopGame
         await ToSignal(RenderingServer.Singleton, RenderingServer.SignalName.FramePostDraw);
         string prefix = Path.GetFullPath(destination);
         Directory.CreateDirectory(Path.GetDirectoryName(prefix)!);
-        for (int index = 0; index < 10; index++)
+        for (int index = 0; index < 11; index++)
         {
             OpenRoom(index < 3 ? (Room)index : index is 4 or 5 ? Room.Workshop : Room.Shop);
             stage.SnapCamera();
@@ -86,6 +86,14 @@ public partial class ShopGame
                 state.Tomorrow();
                 OpenRoom(Room.Shop);
             }
+            if (index == 10)
+            {
+                speed = 0;
+                state.Stock[Catalog.Engine] += state.StorageCapacity - state.StorageUsed;
+                ToggleStockroom();
+                stockroomSelection = Catalog.Engine;
+                Rebuild();
+            }
 
             UpdateReadouts();
             stage.SnapAtmosphere();
@@ -107,8 +115,8 @@ public partial class ShopGame
         try
         {
             Check(state.Displays.Count == 0 && action.Text == "Place a register" && !state.Open(), "empty shop at start");
-            AdvanceDay();
-            Check(placing == Fixture.Register, "first action leads to register placement");
+            PressSpace();
+            Check(placing == Fixture.Register, "Space follows the current setup action");
             PlaceDisplay(new Cell(5, 2));
             Check(state.Register == selectedDisplay && state.Furniture[(int)Fixture.Register] == 0, "place register");
             BeginPlacement(Fixture.Display, false);
@@ -168,7 +176,11 @@ public partial class ShopGame
             state.Cash = 420;
             Check(state.Expand() && state.Width == 9, "expansion");
             OpenRoom(Room.Shop);
-            AdvanceDay();
+            ledger.GrabFocus();
+            PressSpace();
+            Check(state.Shift == Shift.Open && !summary, "Space opens the shop with another button focused");
+            PressSpace();
+            Check(state.Today.Sold == 0 && !summary, "Space does nothing with an empty register");
             int cashAtOpening = state.Cash;
             int beforeSale = state.Displays.Sum(item => item.Count) + state.Stock.Sum();
             int checkoutTotal = 0;
@@ -181,8 +193,12 @@ public partial class ShopGame
             Check(state.ReadyToPay is Customer && state.Cash == cashAtOpening && state.Today.Sold == 0,
                 "baskets reserve stock before checkout");
             Check(state.Displays.Sum(item => item.Count) + state.Stock.Sum() < beforeSale, "basket removed stock");
-            Check(state.RingUp() && state.Today.Sold > 0 && state.Cash == cashAtOpening + checkoutTotal,
-                "payment happens at the register");
+            UpdateReadouts();
+            PressSpace(echo: true);
+            Check(state.Today.Sold == 0, "holding Space does not ring up a customer");
+            PressSpace();
+            Check(state.Today.Sold > 0 && state.Cash == cashAtOpening + checkoutTotal,
+                "Space rings up the ready customer");
             Check(!state.Move(state.Displays[0], new Cell(3, 2)), "layout protected during trading");
 
             for (int tick = 0; tick < 45 && state.ReadyToPay == null; tick++)
@@ -196,8 +212,12 @@ public partial class ShopGame
             }
             Check(state.Shift == Shift.Closed && state.Today.Revenue == resumed.Today.Revenue &&
                 state.Cash == resumed.Cash && state.Seed == resumed.Seed, "checkout and closing resume deterministically");
-            AdvanceDay();
-            Check(state.Day == 2 && state.Yesterday.Visitors > 0 && state.Today.Visitors == 0, "daily report rollover");
+            summary = true;
+            Rebuild();
+            PressSpace();
+            Check(state.Day == 2 && state.Yesterday.Visitors > 0 && state.Today.Visitors == 0 && !summary,
+                "Space starts the next day from the till report");
+            TestStockroomControls();
 
             TestLegacySave();
             TestBlueprintEconomy();
@@ -205,7 +225,7 @@ public partial class ShopGame
             TestDecorAndStorage();
             TestStreetTraffic();
             PlayCampaign();
-            GD.Print("Smoke test passed: street speed, door traffic and lighting states, shops, crafting, saves, and campaign.");
+            GD.Print("Smoke test passed: shop controls, stockroom, crafting, street traffic and lighting, saves, and campaign.");
             GetTree().Quit();
         }
         catch (Exception error)
@@ -213,6 +233,39 @@ public partial class ShopGame
             GD.PushError(error.ToString());
             GetTree().Quit(1);
         }
+    }
+
+    private void PressSpace(bool echo = false)
+    {
+        using InputEventKey press = new() { Keycode = Key.Space, Pressed = true, Echo = echo };
+        GetViewport().PushInput(press);
+        if (!echo)
+        {
+            using InputEventKey release = new() { Keycode = Key.Space };
+            GetViewport().PushInput(release);
+        }
+    }
+
+    private void TestStockroomControls()
+    {
+        int toy = Catalog.Engine;
+        state.Stock[toy] = 5;
+        int onDisplay = state.StockOnDisplay(toy);
+        stockroomTab.EmitSignal(Button.SignalName.Pressed);
+        Check(showStockroom && stockroomMeter.Value == state.StorageUsed &&
+            stockroomMeter.MaxValue == state.StorageCapacity, "stockroom shows used and total space");
+        Button card = content.GetChildren().OfType<Button>().First(button =>
+            button.AccessibilityName.StartsWith(Catalog.Toys[toy].Name));
+        card.EmitSignal(Button.SignalName.Pressed);
+        SpinBox units = (SpinBox)content.FindChild("DiscardQuantity", owned: false);
+        Button discard = (Button)content.FindChild("DiscardStock", owned: false);
+        units.GetLineEdit().Text = "3";
+        discard.EmitSignal(Button.SignalName.Pressed);
+        Check(confirmDiscard.Visible && pendingDiscard == (toy, 3) && state.Stock[toy] == 5,
+            "typed quantity asks for confirmation before changing stock");
+        confirmDiscard.GetOkButton().EmitSignal(Button.SignalName.Pressed);
+        Check(state.Stock[toy] == 2 && state.StockOnDisplay(toy) == onDisplay &&
+            TestDiskSave(state).Stock[toy] == 2, "confirmed discard removes and saves only the selected reserve");
     }
 
     private static void FinishByHand(ShopState run)
@@ -423,6 +476,11 @@ public partial class ShopGame
         run.AdvanceBench(120, true);
         Check(run.OutputBlocked && run.Orders[0].Remaining == ShopState.MaxBatch && run.StorageUsed == run.StorageCapacity,
             "full stockroom pauses output without loss");
+        Check(!run.DiscardStock(0, run.Stock[0] + 1) && !run.DiscardStock(0, 0), "invalid discards leave stock unchanged");
+        Check(run.DiscardStock(0, 3) && run.StorageUsed == run.StorageCapacity - 3 && !run.OutputBlocked,
+            "discarding stock frees space for the paused batch");
+        run.AdvanceBench(120, true);
+        Check(run.Orders[0].Made == 3 && run.OutputBlocked, "batch fills the freed storage space");
         int rent = run.DailyRent;
         Check(run.RentMoreStorage() && run.DailyRent > rent && !run.OutputBlocked, "room and rent increase together");
         run.AdvanceBench(20, true);

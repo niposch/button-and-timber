@@ -56,6 +56,7 @@ public partial class ShopGame : Control
     private Label hint = null!;
     private Label earnings = null!;
     private Button action = null!;
+    private Panel spaceKey = null!;
     private MenuButton options = null!;
     private ConfirmationDialog newCampaign = null!;
     private Button ledger = null!;
@@ -125,7 +126,7 @@ public partial class ShopGame : Control
         if (state.Shift != before)
         {
             Play(bell, -10);
-            summary = room == Room.Shop;
+            summary = room == Room.Shop && !showStockroom;
             status = "";
             Save();
             Rebuild();
@@ -138,7 +139,7 @@ public partial class ShopGame : Control
         else if (state.Orders.Count != ordersBefore)
         {
             Save();
-            if (room == Room.Workshop)
+            if (room == Room.Workshop && !showStockroom)
                 Rebuild(true);
         }
 
@@ -157,8 +158,19 @@ public partial class ShopGame : Control
 
     public override void _Input(InputEvent input)
     {
-        if (room != Room.Workshop || summary || state.Orders.Count == 0 || GetViewport().GuiGetFocusOwner() is LineEdit ||
-            newCampaign == null || newCampaign.Visible || options.GetPopup().Visible)
+        if (newCampaign == null || newCampaign.Visible || confirmDiscard.Visible || options.GetPopup().Visible ||
+            GetViewport().GuiGetFocusOwner() is LineEdit)
+            return;
+
+        if (input is InputEventKey { Keycode: Key.Space } space && action.IsVisibleInTree())
+        {
+            GetViewport().SetInputAsHandled();
+            if (space.Pressed && !space.Echo && !action.Disabled)
+                AdvanceDay();
+            return;
+        }
+
+        if (room != Room.Workshop || summary || state.Orders.Count == 0)
             return;
 
         Tool? tool = input switch
@@ -193,6 +205,7 @@ public partial class ShopGame : Control
             case Key.Key2: OpenRoom(Room.Workshop); break;
             case Key.Key3: OpenRoom(Room.Town); break;
             case Key.Escape when placing.HasValue: CancelPlacement(); break;
+            case Key.Escape when showStockroom: ToggleStockroom(); break;
             case Key.M: ToggleSound(); break;
             default: return;
         }
@@ -283,6 +296,7 @@ public partial class ShopGame : Control
             if (destination == Room.Workshop)
                 workshopAttention = Put(tab, "✦", 109, 1, 18, 34, 14, Brass);
         }
+        MakeStockroomControls();
 
         int speedX = 662;
         foreach (int rate in Rates)
@@ -334,6 +348,7 @@ public partial class ShopGame : Control
         earnings = Put(this, "", 678, 707, 198, 26, 14, Cream);
         ledger = MakeButton("Till report", () =>
         {
+            showStockroom = false;
             summary = !summary;
             Rebuild();
         }, dark: true);
@@ -362,7 +377,12 @@ public partial class ShopGame : Control
         Rectangle(this, 908, 727, 353, 54, "e2d2ad");
         Rectangle(this, 910, 727, 349, 1, "b4a17b");
         action = MakeButton("", AdvanceDay, strong: true);
+        action.TooltipText = "Press Space";
         Place(this, action, 923, 736, 322, 36);
+        spaceKey = new Panel { MouseFilter = MouseFilterEnum.Ignore };
+        spaceKey.AddThemeStyleboxOverride("panel", Box("36594d", "6c8f79", 3, 0));
+        Place(action, spaceKey, 264, 7, 49, 22);
+        Put(spaceKey, "Space", 0, 0, 49, 21, 11, Cream).HorizontalAlignment = HorizontalAlignment.Center;
 
         for (int i = 0; i < audio.Length; i++)
         {
@@ -388,6 +408,7 @@ public partial class ShopGame : Control
         placing = null;
         showDecor = false;
         showWorkshopDecor = false;
+        showStockroom = false;
         reading = null;
         status = "";
         Rebuild();
@@ -425,6 +446,7 @@ public partial class ShopGame : Control
         selectedDisplay = display;
         reading = null;
         summary = false;
+        showStockroom = false;
         status = "";
         Rebuild();
     }
@@ -433,6 +455,7 @@ public partial class ShopGame : Control
     {
         reading = customer;
         summary = false;
+        showStockroom = false;
         status = "";
         Rebuild();
     }
@@ -482,6 +505,8 @@ public partial class ShopGame : Control
 
         if (summary)
             TillPanel();
+        else if (showStockroom)
+            StockroomPanel();
         else if (room == Room.Workshop)
             WorkshopPanel();
         else if (room == Room.Town)
@@ -521,6 +546,7 @@ public partial class ShopGame : Control
 
     private void BeginPlacement(Fixture kind, bool relocate)
     {
+        showStockroom = false;
         moving = relocate;
         placing = kind;
         if (!relocate)
@@ -728,10 +754,11 @@ public partial class ShopGame : Control
         };
         action.Disabled = (state.Shift == Shift.Setup && placing.HasValue) ||
             (state.Shift == Shift.Open && room == Room.Shop && state.ReadyToPay == null);
-        action.Visible = summary || room == Room.Shop;
+        action.Visible = summary || room == Room.Shop || state.Shift == Shift.Closed;
+        spaceKey.Visible = !action.Disabled;
         ledger.Text = summary ? "Close report" : "Till report";
         ledger.TooltipText = state.Notes.FirstOrDefault() ?? "";
-        decorPlans.Visible = room == Room.Workshop && !summary;
+        decorPlans.Visible = room == Room.Workshop && !summary && !showStockroom;
         decorPlans.Text = showWorkshopDecor ? "Toys" : "Decor";
 
         for (int i = 0; i < tabs.Count; i++)
@@ -743,6 +770,7 @@ public partial class ShopGame : Control
             SelectedStyle(speeds[i], speed == Rates[i], true);
         stage.Paused = speed == 0;
         UpdateCraftPad();
+        UpdateStockroomMeter();
 
         foreach (Action read in refresh)
             read();

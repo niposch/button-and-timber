@@ -14,6 +14,7 @@ public partial class ShopGame
         if (showWorkshopDecor)
         {
             DecorPanel(makeOnly: true);
+            StockroomWarning(link: true);
             ShowQueue();
             return;
         }
@@ -122,10 +123,7 @@ public partial class ShopGame
             });
         }
 
-        Label storage = Line("", 12, Faded);
-        Sync(() => storage.Text = state.OutputBlocked
-            ? $"Stockroom full · {state.StorageUsed}/{state.StorageCapacity}"
-            : $"Stockroom {state.StorageUsed}/{state.StorageCapacity}");
+        StockroomWarning(link: true);
         ShowQueue();
     }
 
