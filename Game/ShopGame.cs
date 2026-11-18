@@ -76,7 +76,7 @@ public partial class ShopGame : Control
         state.UpgradeSave();
         AddFirstNote();
 
-        GetWindow().MinSize = new Vector2I(960, 600);
+        GetWindow().MinSize = new Vector2I(360, 480);
         serif = OS.HasFeature("web")
             ? GD.Load<Font>("res://Art/Fonts/DejaVuSerif-Bold.ttf")
             : new SystemFont { FontNames = ["Georgia", "DejaVu Serif", "Noto Serif"], FontWeight = 700 };
@@ -211,39 +211,94 @@ public partial class ShopGame : Control
         GetViewport().SetInputAsHandled();
     }
 
+    private BoxContainer body = null!;
+    private PanelContainer side = null!;
+    private Control sideFooter = null!;
+    private Control brandTitle = null!;
+
+    private static PanelContainer Frame(string fill, string stroke, int corner, int padX, int padY)
+    {
+        StyleBoxFlat box = Box(fill, stroke, corner, padX);
+        box.ContentMarginTop = box.ContentMarginBottom = padY;
+        PanelContainer panel = new();
+        panel.AddThemeStyleboxOverride("panel", box);
+        return panel;
+    }
+
+    private static VBoxContainer Block(float width, params Control[] children)
+    {
+        VBoxContainer block = new() { CustomMinimumSize = new Vector2(width, 0), SizeFlagsVertical = SizeFlags.ShrinkCenter };
+        block.AddThemeConstantOverride("separation", 0);
+        foreach (Control child in children)
+            block.AddChild(child);
+        return block;
+    }
+
+    private static void AnchorTo(Control child, LayoutPreset preset, float left, float top, float right, float bottom)
+    {
+        child.SetAnchorsPreset(preset);
+        child.OffsetLeft = left;
+        child.OffsetTop = top;
+        child.OffsetRight = right;
+        child.OffsetBottom = bottom;
+    }
+
     private void MakeInterface()
     {
-        Rectangle(this, 0, 0, 1280, 800, "233330");
-        Rectangle(this, 14, 12, 1252, 80, "43584c");
-        Rectangle(this, 16, 14, 1248, 76, "2e433d");
-        Rectangle(this, 16, 88, 1248, 2, "6a7358");
+        SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
+        ColorRect backdrop = new() { Color = ToyArt.C("233330"), MouseFilter = MouseFilterEnum.Ignore };
+        AddChild(backdrop);
+        backdrop.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
+
+        MarginContainer margin = new();
+        AddChild(margin);
+        margin.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
+        foreach (string edge in new[] { "left", "right", "top", "bottom" })
+            margin.AddThemeConstantOverride($"margin_{edge}", 12);
+        VBoxContainer shell = new();
+        shell.AddThemeConstantOverride("separation", 10);
+        margin.AddChild(shell);
+
+        PanelContainer top = Frame("2e433d", "43584c", 6, 14, 8);
+        shell.AddChild(top);
+        HBoxContainer topRow = new();
+        topRow.AddThemeConstantOverride("separation", 14);
+        top.AddChild(topRow);
         TextureRect icon = new()
         {
             Texture = GD.Load<Texture2D>("res://Art/Icon.svg"),
             ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize,
             StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered,
-            MouseFilter = MouseFilterEnum.Ignore
+            MouseFilter = MouseFilterEnum.Ignore,
+            CustomMinimumSize = new Vector2(46, 46)
         };
-        Place(this, icon, 28, 26, 49, 48);
-        Put(this, "Button & Timber", 85, 22, 316, 54, 30, Light, true);
-        Rule(400);
-        Rule(559);
-        Rule(688);
-        Rule(831);
+        topRow.AddChild(icon);
+        Label brand = TextLabel("Button & Timber", 28, Light, true);
+        brand.CustomMinimumSize = new Vector2(290, 0);
+        brandTitle = brand;
+        topRow.AddChild(brand);
 
-        date = Put(this, "", 422, 23, 136, 28, 19, Light, true);
-        time = Put(this, "", 423, 52, 130, 23, 13, Brass);
-        cash = Put(this, "", 580, 24, 103, 32, 25, Brass, true);
-        Put(this, "Cash", 582, 55, 96, 22, 13, Light);
-        reputation = Put(this, "", 711, 27, 116, 28, 21, Light, true);
-        Put(this, "Reputation", 712, 55, 110, 22, 13, Light);
-        goal = Put(this, "", 851, 24, 288, 23, 15, Cream);
+        HFlowContainer stats = new() { SizeFlagsHorizontal = SizeFlags.ExpandFill };
+        stats.AddThemeConstantOverride("h_separation", 22);
+        stats.AddThemeConstantOverride("v_separation", 4);
+        topRow.AddChild(stats);
+        date = TextLabel("", 19, Light, true);
+        time = TextLabel("", 13, Brass);
+        stats.AddChild(Block(136, date, time));
+        cash = TextLabel("", 25, Brass, true);
+        stats.AddChild(Block(100, cash, TextLabel("Cash", 13, Light)));
+        reputation = TextLabel("", 21, Light, true);
+        stats.AddChild(Block(116, reputation, TextLabel("Reputation", 13, Light)));
+        goal = TextLabel("", 15, Cream);
         goalProgress = Meter(9, true);
-        Place(this, goalProgress, 851, 52, 190, 9);
-        daysLeft = Put(this, "", 851, 63, 267, 18, 12, ToyArt.C("c1c8a7"));
-        options = new MenuButton { Text = "Options", Flat = false, MouseDefaultCursorShape = CursorShape.PointingHand };
+        goalProgress.CustomMinimumSize = new Vector2(190, 9);
+        daysLeft = TextLabel("", 12, ToyArt.C("c1c8a7"));
+        stats.AddChild(Block(260, goal, goalProgress, daysLeft));
+
+        options = new MenuButton { Text = "Options", Flat = false, MouseDefaultCursorShape = CursorShape.PointingHand,
+            CustomMinimumSize = new Vector2(101, 37), SizeFlagsVertical = SizeFlags.ShrinkCenter };
         SelectedStyle(options, false, true);
-        Place(this, options, 1145, 31, 101, 37);
+        topRow.AddChild(options);
         PopupMenu menu = options.GetPopup();
         menu.AddCheckItem("Sound effects  (M)", 1);
         menu.AddCheckItem("Reduce decorative motion", 2);
@@ -282,6 +337,17 @@ public partial class ShopGame : Control
         newCampaign.Confirmed += StartCampaign;
         AddChild(newCampaign);
 
+        body = new BoxContainer { SizeFlagsVertical = SizeFlags.ExpandFill };
+        body.AddThemeConstantOverride("separation", 10);
+        shell.AddChild(body);
+        VBoxContainer left = new() { SizeFlagsHorizontal = SizeFlags.ExpandFill, SizeFlagsVertical = SizeFlags.ExpandFill };
+        left.AddThemeConstantOverride("separation", 8);
+        body.AddChild(left);
+
+        HFlowContainer nav = new();
+        nav.AddThemeConstantOverride("h_separation", 7);
+        nav.AddThemeConstantOverride("v_separation", 6);
+        left.AddChild(nav);
         Room[] rooms = [Room.Shop, Room.Workshop, Room.Town];
         for (int index = 0; index < rooms.Length; index++)
         {
@@ -289,17 +355,17 @@ public partial class ShopGame : Control
             Button tab = MakeButton(destination == Room.Town ? "Orders" : destination.ToString(),
                 () => OpenRoom(destination), dark: true);
             tab.TooltipText = $"Open {destination.ToString().ToLowerInvariant()} ({index + 1})";
+            tab.CustomMinimumSize = new Vector2(104, 37);
             tabs.Add(tab);
-            Place(this, tab, 16 + index * 139, 105, 132, 37);
+            nav.AddChild(tab);
             if (destination == Room.Workshop)
-                workshopAttention = Put(tab, "✦", 109, 1, 18, 34, 14, Brass);
+                workshopAttention = Put(tab, "✦", 82, 1, 18, 34, 14, Brass);
         }
         MakeStockroomControls();
+        nav.AddChild(stockroomTab);
 
-        int speedX = 662;
         foreach (int rate in Rates)
         {
-            int width = rate == 0 ? 62 : 49;
             Button button = MakeButton(rate == 0 ? "II" : $"{rate}×", () =>
             {
                 speed = rate;
@@ -307,26 +373,45 @@ public partial class ShopGame : Control
             }, dark: true);
             button.TooltipText = rate == 0 ? "Pause the shop clock and workbench" :
                 $"Run the shop clock and workbench at {rate}× speed";
-            Place(this, button, speedX, 105, width, 37);
-            speedX += width + 7;
+            button.CustomMinimumSize = new Vector2(rate == 0 ? 56 : 48, 37);
+            nav.AddChild(button);
             speeds.Add(button);
         }
 
-        Rectangle(this, 16, 149, 877, 535, "b3ac7e");
-        Rectangle(this, 18, 151, 873, 531, "172c29");
+        Control host = new()
+        {
+            SizeFlagsHorizontal = SizeFlags.ExpandFill, SizeFlagsVertical = SizeFlags.ExpandFill,
+            CustomMinimumSize = new Vector2(0, 220), ClipContents = true
+        };
+        left.AddChild(host);
+        Panel frame = new() { MouseFilter = MouseFilterEnum.Ignore };
+        frame.AddThemeStyleboxOverride("panel", Box("172c29", "b3ac7e", 4, 0));
+        host.AddChild(frame);
+        frame.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
         stage = new StreetView { ClipContents = true, State = state, MouseDefaultCursorShape = CursorShape.PointingHand };
         stage.DisplayPicked = PickDisplay;
         stage.CustomerPicked = PickCustomer;
         stage.TilePicked = PlaceDisplay;
         stage.EmptyFloorPicked = ClearSelection;
-        Place(this, stage, 20, 153, 869, 527);
-        MakeCraftPad();
-        stageState = Put(this, "", 39, 171, 272, 29, 20, ToyArt.C("273f36"), true);
-        hint = Put(this, "", 39, 641, 720, 31, 15, ToyArt.C("273f36"));
+        host.AddChild(stage);
+        stage.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect, LayoutPresetMode.Minsize, 2);
+        MakeCraftPad(host);
+        stageState = TextLabel("", 20, ToyArt.C("273f36"), true);
+        host.AddChild(stageState);
+        AnchorTo(stageState, LayoutPreset.TopLeft, 20, 16, 340, 45);
+        hint = TextLabel("", 15, ToyArt.C("273f36"));
+        host.AddChild(hint);
+        AnchorTo(hint, LayoutPreset.BottomWide, 20, -38, -20, -8);
 
-        Rectangle(this, 16, 695, 877, 90, "476157");
-        Rectangle(this, 18, 697, 873, 86, "31483f");
-        Put(this, "Today’s demand", 32, 710, 160, 31, 16, Light, true);
+        PanelContainer demand = Frame("31483f", "476157", 6, 14, 8);
+        left.AddChild(demand);
+        HFlowContainer demandRow = new();
+        demandRow.AddThemeConstantOverride("h_separation", 9);
+        demandRow.AddThemeConstantOverride("v_separation", 6);
+        demand.AddChild(demandRow);
+        Label caption = TextLabel("Today’s demand", 16, Light, true);
+        caption.CustomMinimumSize = new Vector2(120, 58);
+        demandRow.AddChild(caption);
         foreach (ToyFamily family in Catalog.Families)
         {
             ToyFamily target = family;
@@ -336,50 +421,76 @@ public partial class ShopGame : Control
                 selectedToy = root;
                 OpenRoom(Room.Workshop);
             }, dark: true);
-            Place(this, tile, 196 + (int)family * 111, 711, 102, 58);
+            tile.CustomMinimumSize = new Vector2(102, 58);
+            demandRow.AddChild(tile);
             Place(tile, new FamilyIcon { Family = family, MouseFilter = MouseFilterEnum.Ignore }, 8, 7, 41, 41);
             Label heat = Put(tile, "", 55, 7, 44, 20, 12, Brass);
             Label stock = Put(tile, "", 58, 28, 43, 20, 12, Cream);
             demandTiles.Add((tile, heat, stock));
         }
-        Rectangle(this, 663, 709, 1, 59, "667968");
-        earnings = Put(this, "", 678, 707, 198, 26, 14, Cream);
+        earnings = TextLabel("", 14, Cream);
         ledger = MakeButton("Till report", () =>
         {
             showStockroom = false;
             summary = !summary;
             Rebuild();
         }, dark: true);
-        Place(this, ledger, 677, 741, 194, 31);
+        ledger.CustomMinimumSize = new Vector2(170, 31);
+        VBoxContainer ledgerBlock = Block(170, earnings, ledger);
+        ledgerBlock.AddThemeConstantOverride("separation", 4);
+        demandRow.AddChild(ledgerBlock);
 
-        Rectangle(this, 905, 105, 359, 680, "a38b67");
-        Rectangle(this, 907, 107, 355, 676, "eadbbc");
-        Rectangle(this, 909, 109, 351, 57, "f2e5c7");
-        Rectangle(this, 910, 165, 349, 1, "b4a17b");
-        panelTitle = Put(this, "", 925, 111, 319, 33, 25, Ink, true);
-        panelContext = Put(this, "", 926, 144, 316, 17, 12, Faded);
+        side = Frame("eadbbc", "a38b67", 6, 0, 0);
+        body.AddChild(side);
+        VBoxContainer sideColumn = new();
+        sideColumn.AddThemeConstantOverride("separation", 0);
+        side.AddChild(sideColumn);
+        PanelContainer head = Frame("f2e5c7", "f2e5c7", 5, 16, 8);
+        sideColumn.AddChild(head);
+        HBoxContainer headRow = new();
+        head.AddChild(headRow);
+        VBoxContainer titles = new() { SizeFlagsHorizontal = SizeFlags.ExpandFill };
+        titles.AddThemeConstantOverride("separation", 0);
+        headRow.AddChild(titles);
+        panelTitle = TextLabel("", 25, Ink, true);
+        panelContext = TextLabel("", 12, Faded);
+        titles.AddChild(panelTitle);
+        titles.AddChild(panelContext);
         decorPlans = MakeButton("Decor", () =>
         {
             showWorkshopDecor = !showWorkshopDecor;
             Rebuild();
         });
-        Place(this, decorPlans, 1166, 120, 77, 34);
+        decorPlans.CustomMinimumSize = new Vector2(77, 34);
+        decorPlans.SizeFlagsVertical = SizeFlags.ShrinkCenter;
+        headRow.AddChild(decorPlans);
+        sideColumn.AddChild(new ColorRect { Color = ToyArt.C("b4a17b"), CustomMinimumSize = new Vector2(0, 1), MouseFilter = MouseFilterEnum.Ignore });
 
+        MarginContainer scrollMargin = new() { SizeFlagsVertical = SizeFlags.ExpandFill };
+        scrollMargin.AddThemeConstantOverride("margin_left", 14);
+        scrollMargin.AddThemeConstantOverride("margin_right", 10);
+        scrollMargin.AddThemeConstantOverride("margin_top", 10);
+        scrollMargin.AddThemeConstantOverride("margin_bottom", 8);
+        sideColumn.AddChild(scrollMargin);
         scroll = new ScrollContainer
         {
             HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled,
             VerticalScrollMode = ScrollContainer.ScrollMode.Auto,
             FollowFocus = true
         };
-        Place(this, scroll, 924, 178, 325, 539);
-        Rectangle(this, 908, 727, 353, 54, "e2d2ad");
-        Rectangle(this, 910, 727, 349, 1, "b4a17b");
+        scrollMargin.AddChild(scroll);
+
+        PanelContainer footer = Frame("e2d2ad", "d3c297", 0, 14, 9);
+        sideFooter = footer;
+        sideColumn.AddChild(footer);
         action = MakeButton("", AdvanceDay, strong: true);
         action.TooltipText = "Press Space";
-        Place(this, action, 923, 736, 322, 36);
+        action.CustomMinimumSize = new Vector2(0, 38);
+        footer.AddChild(action);
         spaceKey = new Panel { MouseFilter = MouseFilterEnum.Ignore };
         spaceKey.AddThemeStyleboxOverride("panel", Box("36594d", "6c8f79", 3, 0));
-        Place(action, spaceKey, 264, 7, 49, 22);
+        action.AddChild(spaceKey);
+        AnchorTo(spaceKey, LayoutPreset.CenterRight, -58, -11, -9, 11);
         Put(spaceKey, "Space", 0, 0, 49, 21, 11, Cream).HorizontalAlignment = HorizontalAlignment.Center;
 
         for (int i = 0; i < audio.Length; i++)
@@ -393,9 +504,38 @@ public partial class ShopGame : Control
         warning = Sound("error_003");
         coins = Sound("glass_005");
         MakeShopAudio();
-        return;
 
-        void Rule(int x) => Rectangle(this, x, 29, 1, 42, "526455");
+        Resized += ApplyLayout;
+        GetWindow().SizeChanged += ApplyScale;
+        ApplyScale();
+        ApplyLayout();
+    }
+
+    private void ApplyScale()
+    {
+        Window window = GetWindow();
+        Vector2 pixels = window.Size;
+        window.ContentScaleMode = Window.ContentScaleModeEnum.CanvasItems;
+        window.ContentScaleAspect = Window.ContentScaleAspectEnum.Expand;
+        window.ContentScaleSize = Vector2I.Zero;
+        window.ContentScaleFactor = pixels.X < pixels.Y
+            ? Math.Clamp(pixels.X / 540f, 1f, 3f)
+            : Math.Clamp(Math.Min(pixels.X / 1180f, pixels.Y / 720f), .75f, 2.5f);
+    }
+
+    private void ApplyLayout()
+    {
+        if (body == null)
+            return;
+
+        Vector2 size = Size;
+        bool portrait = size.X < 780 || size.X < size.Y;
+        body.Vertical = portrait;
+        side.CustomMinimumSize = portrait
+            ? new Vector2(0, Math.Clamp(size.Y * .42f, 250, 520))
+            : new Vector2(Math.Clamp(size.X * .29f, 350, 480), 0);
+        brandTitle.Visible = size.X >= 1060;
+        daysLeft.Visible = !portrait;
     }
 
     private void OpenRoom(Room newRoom)
@@ -753,6 +893,7 @@ public partial class ShopGame : Control
         action.Disabled = (state.Shift == Shift.Setup && placing.HasValue) ||
             (state.Shift == Shift.Open && room == Room.Shop && state.ReadyToPay == null);
         action.Visible = summary || room == Room.Shop || state.Shift == Shift.Closed;
+        sideFooter.Visible = action.Visible;
         spaceKey.Visible = !action.Disabled;
         ledger.Text = summary ? "Close report" : "Till report";
         ledger.TooltipText = state.Notes.FirstOrDefault() ?? "";

@@ -16,12 +16,12 @@ public partial class ShopGame
     private void MakeStockroomControls()
     {
         stockroomTab = MakeButton("", ToggleStockroom, dark: true);
-        Place(this, stockroomTab, 433, 105, 206, 37);
+        stockroomTab.CustomMinimumSize = new Vector2(190, 37);
         stockroomTitle = Put(stockroomTab, "Stockroom", 11, 1, 99, 22, 14, Light);
-        stockroomCount = Put(stockroomTab, "", 105, 1, 89, 22, 15, Brass);
+        stockroomCount = Put(stockroomTab, "", 90, 1, 89, 22, 15, Brass);
         stockroomCount.HorizontalAlignment = HorizontalAlignment.Right;
         stockroomMeter = Meter(7, dark: true);
-        Place(stockroomTab, stockroomMeter, 11, 24, 183, 7);
+        Place(stockroomTab, stockroomMeter, 11, 24, 168, 7);
 
         confirmDiscard = new ConfirmationDialog
         {

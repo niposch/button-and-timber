@@ -252,10 +252,11 @@ public partial class ShopGame
         }
     }
 
-    private void MakeCraftPad()
+    private void MakeCraftPad(Control host)
     {
         craftPad = new Control { MouseFilter = MouseFilterEnum.Ignore };
-        Place(this, craftPad, 55, 446, 182, 182);
+        host.AddChild(craftPad);
+        AnchorTo(craftPad, LayoutPreset.BottomLeft, 28, -236, 210, -54);
         foreach (Tool tool in Tools)
         {
             int i = (int)tool;
