@@ -150,7 +150,7 @@ progressive_web_app/enabled=false
     foreach ($entry in @('LICENSE', 'THIRD_PARTY.md', 'licenses')) {
         Copy-Item -LiteralPath (Join-Path $PSScriptRoot $entry) -Destination $output -Recurse
     }
-    foreach ($notice in @('Art/Audio/License.txt', 'Art/Source/KayKit-License.txt', 'Art/Source/Quaternius-License.txt')) {
+    foreach ($notice in @('Art/Audio/License.txt', 'Art/Source/KayKit-License.txt', 'Art/Source/Quaternius-License.txt', 'Art/Fonts/LICENSE')) {
         $publishedNotice = Join-Path $output $notice
         New-Item -ItemType Directory -Force -Path (Split-Path $publishedNotice) | Out-Null
         Copy-Item -LiteralPath (Join-Path $PSScriptRoot $notice) -Destination $publishedNotice

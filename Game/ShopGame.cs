@@ -15,12 +15,7 @@ public partial class ShopGame : Control
     private const string SaveFile = "user://alder-lane.json";
 
     private readonly List<Action> refresh = [];
-    private readonly SystemFont serif = new()
-    {
-        FontNames = ["Georgia", "DejaVu Serif", "Noto Serif"],
-        FontWeight = 700
-    };
-
+    private Font serif = null!;
     private ShopState state = new();
     private Room room;
     private Display? selectedDisplay;
@@ -82,6 +77,9 @@ public partial class ShopGame : Control
         AddFirstNote();
 
         GetWindow().MinSize = new Vector2I(960, 600);
+        serif = OS.HasFeature("web")
+            ? GD.Load<Font>("res://Art/Fonts/DejaVuSerif-Bold.ttf")
+            : new SystemFont { FontNames = ["Georgia", "DejaVu Serif", "Noto Serif"], FontWeight = 700 };
         Theme = MakeTheme();
         MakeInterface();
         state.CheckedOut += OnCheckout;
@@ -959,6 +957,14 @@ public partial class ShopGame : Control
     private static Theme MakeTheme()
     {
         Theme theme = new() { DefaultFontSize = 14 };
+        if (OS.HasFeature("web"))
+        {
+            theme.DefaultFont = new FontVariation
+            {
+                BaseFont = ThemeDB.FallbackFont,
+                Fallbacks = [GD.Load<Font>("res://Art/Fonts/DejaVuSans.ttf")]
+            };
+        }
         foreach (string type in new[] { "Button", "OptionButton", "CheckButton" })
         {
             theme.SetStylebox("normal", type, Box("efe1bf", "beab83", 4));
