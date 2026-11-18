@@ -22,7 +22,6 @@ public partial class StreetView : Control
     private readonly List<(int Amount, float Age)> sales = [];
     private readonly Dictionary<string, Texture2D> sprites = [];
     private readonly Dictionary<string, Vector2[]> feetBySprite = [];
-    private readonly Dictionary<Customer, Vector2> positions = [];
     private Vector2 origin;
     private Vector2 camera;
     private static readonly Vector2[] RoomOffsets = [Vector2.Zero, new(.8f, -9.15f), new(12.7f, 11.3f)];
@@ -42,8 +41,11 @@ public partial class StreetView : Control
         (new(5.53f, 3.53f), new(4.65f, 3.53f), 2, 33, 2.55f)
     ];
 
+    public override void _Ready() => SnapAtmosphere();
+
     public override void _Process(double delta)
     {
+        UpdateAtmosphere(1 - Mathf.Exp(-(float)delta * 4.9f));
         if (!ReducedMotion && !Paused)
             clock += (float)delta;
         Vector2 destination = RoomOffsets[(int)Room];
@@ -51,14 +53,8 @@ public partial class StreetView : Control
         benchFlash = Math.Max(0, benchFlash - (float)delta);
         if (!Paused)
             UpdateWorker((float)delta);
-        foreach (Customer person in State.Customers)
-        {
-            Vector2 target = CustomerPosition(person);
-            positions[person] = positions.TryGetValue(person, out Vector2 previous)
-                ? previous.Lerp(target, 1 - Mathf.Exp(-(float)delta * 17)) : target;
-        }
-        foreach (Customer gone in positions.Keys.Where(person => !State.Customers.Contains(person)).ToArray())
-            positions.Remove(gone);
+        if (State.Shift != Shift.Open)
+            sales.Clear();
         for (int i = sales.Count - 1; i >= 0; i--)
         {
             var sale = sales[i];
@@ -75,8 +71,16 @@ public partial class StreetView : Control
 
     internal void RegisterSale(int amount)
     {
-        if (Room == Room.Shop)
-            sales.Add((amount, 0));
+        if (Room != Room.Shop)
+            return;
+        if (sales.Count > 0 && sales[^1].Age < .20f)
+        {
+            sales[^1] = (sales[^1].Amount + amount, 0);
+            return;
+        }
+        if (sales.Count == 3)
+            sales.RemoveAt(0);
+        sales.Add((amount, 0));
     }
 
     internal void BenchStroke(bool clean)
@@ -119,17 +123,20 @@ public partial class StreetView : Control
         scale = Math.Min(Size.X / 902, Size.Y / 541);
         float offsetX = 24 + (State.Expanded ? 39 * Mathf.Clamp(1 - camera.Length() / 5, 0, 1) : 0);
         origin = new Vector2(Size.X / 2 - offsetX * scale, Size.Y * .292f) - Project(camera);
+        sceneTint = outsideTint;
         Backdrop();
         Vector2 streetOrigin = origin;
         if (Near(Room.Shop) || Near(Room.Workshop))
             StreetGround();
         PaintRoom(Room.Workshop, Workshop);
         origin = streetOrigin;
+        sceneTint = outsideTint;
         if (Near(Room.Shop) || Near(Room.Workshop))
             StreetLife(back: true);
         PaintRoom(Room.Shop, Shop);
         PaintRoom(Room.Town, Town);
         origin = streetOrigin;
+        sceneTint = outsideTint;
         if (Near(Room.Shop) || Near(Room.Workshop))
             StreetLife(back: false);
 
@@ -144,6 +151,7 @@ public partial class StreetView : Control
             if (!Near(zone))
                 return;
             origin = streetOrigin + Project(RoomOffsets[(int)zone]);
+            sceneTint = RoomTint(zone);
             paint();
         }
     }
@@ -157,9 +165,7 @@ public partial class StreetView : Control
         for (int band = 0; band < 32; band++)
         {
             Color color = ToyArt.C(top[State.Season]).Lerp(ToyArt.C(bottom[State.Season]), band / 31f);
-            if (State.Shift == Shift.Closed)
-                color = color.Lerp(ToyArt.C("48576b"), .31f);
-            DrawRect(new Rect2(0, band * Size.Y / 32, Size.X, Size.Y / 32 + 1), color);
+            DrawRect(new Rect2(0, band * Size.Y / 32, Size.X, Size.Y / 32 + 1), Ambient(color));
         }
 
         for (int x = -13; x < 22; x++)
@@ -195,6 +201,8 @@ public partial class StreetView : Control
         }
         for (int i = 0; i < 6; i++)
             Ground(10.10f + .37f * i, 8.79f, 10.28f + .37f * i, 10.82f, "dad2b7");
+        foreach (Vector2 lamp in FrontLamps.Concat(LaneLamps))
+            PoolOfLight(P(lamp.X, lamp.Y), 83, nightLight * .48f);
 
         for (int x = -8; x < 18; x++)
         for (int y = 0; y < 6; y++)
@@ -244,19 +252,17 @@ public partial class StreetView : Control
     private void StreetLife(bool back)
     {
         List<(float Depth, Action Paint)> people = [];
-        for (int i = back ? 5 : 0; i < (back ? 8 : 5); i++)
+        foreach (Pedestrian person in State.Pedestrians)
         {
-            int person = i;
-            float drift = (clock * (.37f + i % 3 * .082f) + i * 4.13f) % 22;
-            bool towardTown = i % 2 == 0;
-            float x = towardTown ? drift - 6 : 16 - drift;
-            float y = i < 5 ? 7.65f + i % 2 * .47f : -1.92f + i % 2 * .54f;
-            people.Add((x + y, () =>
-            {
-                int frame = ReducedMotion ? 0 : 1 + (int)(clock * 7 + person * 7.9f) % 7;
-                Figure(x, y, person % 6, towardTown ? 2 : 0, frame);
-            }));
+            if (back != (person.Position.Y < 0))
+                continue;
+            float x = person.Position.X + .5f + person.Direction * (float)(person.Travel + State.ShopRemainder * person.Pace);
+            float y = person.Position.Y + .5f;
+            people.Add((x + y, () => Figure(x, y, person.Appearance % 6, person.Direction > 0 ? 2 : 0,
+                WalkFrame(person.Appearance))));
         }
+        foreach (Vector2 lamp in back ? LaneLamps : FrontLamps)
+            people.Add((lamp.X + lamp.Y, () => Lamp(lamp)));
         DrawProps(people);
         if (back)
             return;
@@ -284,9 +290,12 @@ public partial class StreetView : Control
         for (int i = 0; i < 4; i++)
         {
             float x = .86f + i * .33f;
-            Ground(x, .68f, x + .25f, 1.55f, "f9d98359");
-            Ground(width - 2.5f + i * .33f, .68f, width - 2.25f + i * .33f, 1.55f, "f9d98359");
+            string warmth = morningLight > .4f ? "ffe4ad9e" : "f9d98348";
+            Ground(x, .68f, x + .25f, 1.94f, warmth);
+            Ground(width - 2.5f + i * .33f, .68f, width - 2.25f + i * .33f, 1.94f, warmth);
         }
+        if (State.Shift == Shift.Open)
+            PoolOfLight(P(width - .53f, 5.66f), 60, nightLight * .34f);
 
         if (Placement.HasValue)
         {
@@ -298,7 +307,8 @@ public partial class StreetView : Control
 
         List<(float Depth, Action Paint)> props =
         [
-            (width + 6.3f, () => Sign(width - 1.5f, 7.05f)),
+            (width + 5.46f, FrontDoor),
+            (width + 4.9f, () => Sign(width - 2.05f, 6.82f)),
             (1.5f, () => Pinboard(3.18f, 3.85f))
         ];
 
@@ -330,12 +340,12 @@ public partial class StreetView : Control
 
         foreach (Customer customer in State.Customers)
         {
-            Vector2 point = positions.GetValueOrDefault(customer, CustomerPosition(customer));
+            Vector2 point = CustomerPosition(customer);
             props.Add((point.X + point.Y, () => DrawCustomer(customer, point)));
         }
 
         DrawProps(props);
-        if (State.Register is Display register)
+        if (State.Shift == Shift.Open && State.Register is Display register)
             CheckoutFeedback(register);
     }
 
@@ -457,7 +467,8 @@ public partial class StreetView : Control
             Pixel(drop.X, drop.Y, 2, 3, "d7e2c4");
         }
 
-        Figure(3.24f + Mathf.Sin(clock * .65f) * .35f, 4.3f, 3, 1, 0);
+        float stroll = (float)(State.StreetClock % 1000) * .118f;
+        Figure(3.24f + Mathf.Sin(stroll) * .35f, 4.3f, 3, Mathf.Cos(stroll) >= 0 ? 2 : 0, WalkFrame(3));
         Figure(6.54f, 4.85f, 5, 2, 0);
         Figure(5.34f, 2.93f, 2, 2, 0);
         if (State.Fair)
@@ -702,8 +713,9 @@ public partial class StreetView : Control
         for (int i = 0; i < 2; i++)
         {
             float left = x + w * (.12f + i * .63f);
-            Quad(P(left, near, 26), P(left + w * .15f, near, 26), P(left + w * .15f, near, 50),
-                P(left, near, 50), "f2d48c");
+            Vector2[] glass = [P(left, near, 26), P(left + w * .15f, near, 26), P(left + w * .15f, near, 50),
+                P(left, near, 50)];
+            DrawColoredPolygon(glass, Ambient(ToyArt.C("f2d48c")).Lerp(ToyArt.C("ffd489"), nightLight * .92f));
             Segment(P(left + w * .075f, near + .005f, 27), P(left + w * .075f, near + .005f, 50), "8e775d", 2);
         }
 
@@ -742,14 +754,19 @@ public partial class StreetView : Control
         }
     }
 
-    private static Vector2 CustomerPosition(Customer customer)
+    private Vector2 CustomerPosition(Customer customer)
     {
         Vector2 point = new(customer.Position.X + .5f, customer.Position.Y + .5f);
         if (!customer.Walking)
             return point;
         Cell next = customer.Route[0];
-        return point.Lerp(new Vector2(next.X + .5f, next.Y + .5f), (float)customer.Travel);
+        double pace = customer.Phase is VisitPhase.Approach or VisitPhase.Depart
+            ? (customer.StreetPace > 0 ? customer.StreetPace : .17) : .36;
+        float travel = (float)Math.Min(1, customer.Travel + State.ShopRemainder * pace);
+        return point.Lerp(new Vector2(next.X + .5f, next.Y + .5f), travel);
     }
+
+    private int WalkFrame(int appearance) => ReducedMotion ? 0 : 1 + (int)((State.StreetClock * 1.16 + appearance * 2.7) % 7);
 
     private void DrawCustomer(Customer customer, Vector2 point)
     {
@@ -758,7 +775,11 @@ public partial class StreetView : Control
             customer.DisplayCell ?? customer.Position;
         int direction = facing.X > customer.Position.X ? 2 : facing.X < customer.Position.X ? 0 :
             facing.Y < customer.Position.Y ? 3 : 1;
-        int frame = customer.Walking && !ReducedMotion ? 1 + (int)(clock * 12 + customer.Appearance) % 7 : 0;
+        Color roomLight = sceneTint;
+        bool inside = point.Y < 6;
+        if (!inside)
+            sceneTint = outsideTint;
+        int frame = customer.Walking ? WalkFrame(customer.Appearance) : 0;
         Figure(point.X, point.Y, customer.Appearance % 6, direction, frame);
         Vector2 p = P(point.X, point.Y);
         if (customer.Basket.Count > 0)
@@ -769,7 +790,7 @@ public partial class StreetView : Control
             Pixel(x, y, 10, 10, customer.Result == 1 ? "b68659" : "e6c089");
             Pixel(x + 7 * scale, y, 3, 10, "a77956");
         }
-        if (customer == Reading || (customer.Phase == VisitPhase.Browse && !customer.Walking))
+        if (inside && (customer == Reading || (customer.Phase == VisitPhase.Browse && !customer.Walking)))
         {
             Vector2 mark = p - new Vector2(0, 73 * scale);
             GameIcons.Family(this, customer.Family, mark, 13 * scale);
@@ -779,7 +800,9 @@ public partial class StreetView : Control
                 ToyArt.Draw(this, customer.Wanted, mark + new Vector2(17, 10), .68f);
             }
         }
-        hits.Add((new Rect2(p.X - 17 * scale, p.Y - 57 * scale, 34 * scale, 60 * scale), customer));
+        if (inside)
+            hits.Add((new Rect2(p.X - 17 * scale, p.Y - 57 * scale, 34 * scale, 60 * scale), customer));
+        sceneTint = roomLight;
     }
 
     private void Figure(float x, float y, int style, int direction, int frame, string? actionSprite = null)
@@ -795,10 +818,10 @@ public partial class StreetView : Control
         Vector2[] shadow = new Vector2[16];
         for (int i = 0; i < shadow.Length; i++)
             shadow[i] = center + Vector2.FromAngle(i * Mathf.Tau / shadow.Length) * new Vector2(10, 3.5f) * scale;
-        DrawColoredPolygon(shadow, ToyArt.C("453c356d"));
+        DrawColoredPolygon(shadow, Ambient(ToyArt.C("453c356d")));
         DrawTextureRectRegion(texture,
             new Rect2(p - new Vector2(size * .5f, contact.Y - .7f * scale), new Vector2(size, size)),
-            new Rect2(frame * 112, direction * 112, 112, 112));
+            new Rect2(frame * 112, direction * 112, 112, 112), Ambient(Colors.White));
     }
 
     private static Vector2[] MeasureFeet(Texture2D texture)
@@ -850,7 +873,7 @@ public partial class StreetView : Control
             float life = sale.Age / 1.36f;
             float alpha = 1 - Mathf.SmoothStep(.57f, 1f, life);
             float rise = ReducedMotion ? 16 : 9 + 46 * Mathf.Ease(life, .65f);
-            Vector2 at = p + new Vector2(-23 + i * 9, -rise);
+            Vector2 at = p + new Vector2(-23, -rise - (sales.Count - i - 1) * 24);
             string text = $"+${sale.Amount}";
             Color shadow = ToyArt.C("304f3c");
             Color gold = ToyArt.C("fff1b3");
@@ -873,7 +896,7 @@ public partial class StreetView : Control
         float size = span * 55.15f * scale;
         Vector2 p = P(x, y);
         DrawTextureRect(Texture(name), new Rect2(p - new Vector2(size / 2, size / 2), new Vector2(size, size)),
-            false, tint ?? Colors.White);
+            false, Ambient(tint ?? Colors.White));
     }
 
     internal static string SpriteName(Fixture fixture) => fixture switch
@@ -919,17 +942,17 @@ public partial class StreetView : Control
 
     private void Pixel(float x, float y, float width, float height, string color) =>
         DrawRect(new Rect2(Mathf.Round(x), Mathf.Round(y), Math.Max(1, Mathf.Round(width * scale)),
-            Math.Max(1, Mathf.Round(height * scale))), ToyArt.C(color));
+            Math.Max(1, Mathf.Round(height * scale))), Ambient(ToyArt.C(color)));
 
     private void Segment(Vector2 a, Vector2 b, string color, float width) =>
-        DrawLine(a, b, ToyArt.C(color), Math.Max(width * scale, 1));
+        DrawLine(a, b, Ambient(ToyArt.C(color)), Math.Max(width * scale, 1));
 
     private void Quad(Vector2 a, Vector2 b, Vector2 c, Vector2 d, string color) => Poly(color, a, b, c, d);
 
     private void Poly(string color, params Vector2[] points)
     {
         if (points.Distinct().Count() == points.Length)
-            DrawColoredPolygon(points, ToyArt.C(color));
+            DrawColoredPolygon(points, Ambient(ToyArt.C(color)));
     }
 
     private static uint Hash(int x, int y) => unchecked((uint)((x * 87539319) ^ (y * 19349663)) * 2654435761u) >> 8;

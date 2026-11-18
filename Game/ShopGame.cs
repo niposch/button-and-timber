@@ -674,8 +674,7 @@ public partial class ShopGame : Control
     private void UpdateReadouts()
     {
         date.Text = $"{Catalog.Seasons[state.Season]} {state.Date:00}";
-        double elapsed = state.Shift == Shift.Closed ? ShopState.ShopHours : state.Minute;
-        int minutes = 9 * 60 + (int)elapsed;
+        int minutes = state.ClockTime;
         int hour = minutes / 60;
         time.Text = $"{(hour + 11) % 12 + 1}:{minutes % 60:00} {(hour >= 12 ? "PM" : "AM")}  ·  Year {state.Year}";
         cash.Text = state.Cash < 0 ? $"−${-state.Cash:N0}" : $"${state.Cash:N0}";
@@ -694,12 +693,15 @@ public partial class ShopGame : Control
             Room.Town => state.Fair ? Catalog.Fairs[state.Season] : "",
             _ => state.Shift switch
             {
-                Shift.Setup => "",
+                Shift.Setup => "Before opening",
                 Shift.Open when state.Minute >= ShopState.ShopHours => "Closing",
                 Shift.Open => "Open",
-                _ => "Closed"
+                _ => "Closed for the day"
             }
         };
+        Color sceneText = state.Shift == Shift.Closed || state.Minute > 500 ? Light : ToyArt.C("273f36");
+        stageState.AddThemeColorOverride("font_color", sceneText);
+        hint.AddThemeColorOverride("font_color", sceneText);
         hint.Text = status;
         foreach (ToyFamily family in Catalog.Families)
         {

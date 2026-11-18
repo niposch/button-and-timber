@@ -13,7 +13,7 @@ internal readonly record struct Cell(int X, int Y)
     }
 }
 
-internal enum VisitPhase { Browse, Checkout, Leave }
+internal enum VisitPhase { Browse, Checkout, Leave, Approach, Depart }
 internal sealed record BasketItem(int Toy, int Price);
 
 internal sealed partial class Customer
@@ -35,7 +35,7 @@ internal sealed partial class Customer
 
 internal sealed partial class ShopState
 {
-    public const int CurrentSchema = 3;
+    public const int CurrentSchema = 4;
     public int[] Furniture { get; set; } = [2, 1, 1, 0, 0, 0, 0, 0];
     public double ShopRemainder { get; set; }
     public int LastTicket { get; set; }
@@ -75,8 +75,14 @@ internal sealed partial class ShopState
 
     public void UpgradeSave()
     {
+        InitializeTraffic();
         if (Schema >= CurrentSchema)
             return;
+        if (Schema == 3)
+        {
+            Schema = CurrentSchema;
+            return;
+        }
 
         int count = Catalog.Toys.Length;
         if (Unlocked.Length < count || Stock.Length < count || Prices.Length < count || Practice.Length < count)
@@ -240,21 +246,22 @@ internal sealed partial class ShopState
 
     public void AdvanceShop(double minutes)
     {
-        if (Shift != Shift.Open)
-            return;
-
+        InitializeTraffic();
         ShopRemainder += minutes;
-        while (ShopRemainder >= 1 && Shift == Shift.Open)
+        while (ShopRemainder >= 1)
         {
             ShopRemainder--;
+            TickStreet();
+            if (Shift != Shift.Open)
+                continue;
             Minute = Math.Min(Minute + 1, ShopHours);
             foreach (Customer person in Customers)
                 AdvanceVisit(person);
 
-            Customers.RemoveAll(person => person.Phase == VisitPhase.Leave && !person.Walking);
-            if (Minute >= NextVisitor && Minute < ShopHours - 45)
+            Customers.RemoveAll(person => person.Phase == VisitPhase.Depart && !person.Walking);
+            if (Minute >= NextVisitor && Minute < ShopHours - 45 && FindPassingShopper() is Pedestrian passing)
             {
-                Visit();
+                Visit(passing);
                 int crowd = (Fair ? 4 : 0) + Reputation / 20 + (Expanded ? 2 : 0) + Math.Min(6, Appeal);
                 NextVisitor = Minute + 26 - crowd + Roll(7) - 3;
             }
@@ -322,7 +329,7 @@ internal sealed partial class ShopState
         person.Travel = 0;
     }
 
-    private void Visit()
+    private void Visit(Pedestrian pedestrian)
     {
         ToyFamily family = Catalog.Families[0];
         int roll = Roll(Catalog.Families.Sum(category => 4 + Forecast(category) * 3));
@@ -344,11 +351,10 @@ internal sealed partial class ShopState
         int wanted = candidates[tier == 1 || Roll(100) < 65 ? 0 : Roll(candidates.Length)];
         bool exact = candidates.Length > 1 && Roll(100) < (Fair ? 24 : 14);
         int value = Catalog.Toys[wanted].Value;
-        Customer person = new() { Appearance = Roll(48), Wanted = wanted, WantsExact = exact,
-            Budget = value + 5 + Roll(17 + value / 2), Position = Entry };
+        Customer person = new() { Appearance = pedestrian.Appearance, Wanted = wanted, WantsExact = exact,
+            Budget = value + 5 + Roll(17 + value / 2) };
+        LeadInside(person, pedestrian);
         Customers.Add(person);
-        Today.Visitors++;
-        BrowseNext(person);
     }
 
     private void BrowseNext(Customer person)
@@ -379,18 +385,31 @@ internal sealed partial class ShopState
     {
         if (person.Walking)
         {
-            person.Travel += .36;
+            person.Travel += person.Phase is VisitPhase.Approach or VisitPhase.Depart
+                ? (person.StreetPace > 0 ? person.StreetPace : .17) : .36;
             if (person.Travel >= 1)
             {
                 person.Position = person.Route[0];
                 person.Route.RemoveAt(0);
                 person.Travel = person.Walking ? person.Travel - 1 : 0;
             }
-            return;
+            if (person.Walking || person.Phase is VisitPhase.Browse or VisitPhase.Checkout)
+                return;
         }
 
         switch (person.Phase)
         {
+            case VisitPhase.Approach:
+                person.Phase = VisitPhase.Browse;
+                Today.Visitors++;
+                BrowseNext(person);
+                break;
+            case VisitPhase.Leave:
+                LeadOutside(person);
+                break;
+            case VisitPhase.Depart:
+                RejoinSidewalk(person);
+                break;
             case VisitPhase.Browse:
                 if (--person.Wait <= 0)
                     TryPickToy(person);

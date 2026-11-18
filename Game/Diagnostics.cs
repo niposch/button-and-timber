@@ -10,9 +10,9 @@ public partial class ShopGame
         await ToSignal(RenderingServer.Singleton, RenderingServer.SignalName.FramePostDraw);
         string prefix = Path.GetFullPath(destination);
         Directory.CreateDirectory(Path.GetDirectoryName(prefix)!);
-        for (int index = 0; index < 7; index++)
+        for (int index = 0; index < 10; index++)
         {
-            OpenRoom(index < 3 ? (Room)index : index is 3 or 6 ? Room.Shop : Room.Workshop);
+            OpenRoom(index < 3 ? (Room)index : index is 4 or 5 ? Room.Workshop : Room.Shop);
             stage.SnapCamera();
             if (index == 1)
             {
@@ -62,8 +62,33 @@ public partial class ShopGame
                 showDecor = true;
                 Rebuild();
             }
+            if (index == 7)
+            {
+                showDecor = false;
+                state.Open();
+                state.AdvanceShop(115);
+                for (int tick = 0; tick < 150; tick++)
+                {
+                    if (state.Customers.Any(person => person.Phase == VisitPhase.Approach && person.Position == state.Entry))
+                        break;
+                    state.AdvanceShop(1);
+                }
+                Rebuild();
+            }
+            if (index == 8)
+            {
+                state.AdvanceShop(800);
+                summary = true;
+                Rebuild();
+            }
+            if (index == 9)
+            {
+                state.Tomorrow();
+                OpenRoom(Room.Shop);
+            }
 
             UpdateReadouts();
+            stage.SnapAtmosphere();
             stage.QueueRedraw();
             await ToSignal(RenderingServer.Singleton, RenderingServer.SignalName.FramePostDraw);
             Error result = GetViewport().GetTexture().GetImage().SavePng($"{prefix}-{index}.png");
@@ -178,8 +203,9 @@ public partial class ShopGame
             TestBlueprintEconomy();
             TestProductionLine();
             TestDecorAndStorage();
+            TestStreetTraffic();
             PlayCampaign();
-            GD.Print("Smoke test passed: controls, expanded blueprints, staged batches, cart logistics, reserve limits, seasonal decor, saves, and campaign.");
+            GD.Print("Smoke test passed: street speed, door traffic and lighting states, shops, crafting, saves, and campaign.");
             GetTree().Quit();
         }
         catch (Exception error)
@@ -405,6 +431,62 @@ public partial class ShopGame
         int before = run.Cash;
         run.Close();
         Check(before - run.Cash == run.DailyRent, "rent charged at closing");
+    }
+
+    private static void TestStreetTraffic()
+    {
+        ShopState previous = new() { Schema = 3, Cash = 500 };
+        previous.Unlocked[Catalog.TrainYard] = true;
+        Check(previous.Queue(Catalog.TrainYard, 4), "existing multi-pass order");
+        AdvanceOnePass(previous);
+        Order savedWork = previous.Orders[0];
+        previous.UpgradeSave();
+        Check(previous.Pedestrians.Count > 0 && savedWork.Stage == 1 &&
+            ShopState.Stages(savedWork) == 3 && savedWork.Transfer > 0, "traffic migration keeps ongoing workshop passes");
+
+        ShopState run = new();
+        run.UpgradeSave();
+        Furnish(run);
+        Pedestrian commuter = run.Pedestrians[0];
+        Cell startingTile = commuter.Position;
+        run.AdvanceShop(0);
+        Check(commuter.Position == startingTile && run.StreetClock == 0, "pause holds street traffic");
+        run.AdvanceShop(9 * 8);
+        Check(commuter.Position != startingTile && run.StreetClock == 72 && run.ClockTime == 8 * 60 &&
+            run.Today.Visitors == 0, "street keeps moving before opening at accelerated speed");
+
+        Pedestrian walker = new()
+        {
+            Appearance = 41, Position = new Cell(run.Door.X - 2, 7), Direction = 1, Pace = .18, Travel = .27
+        };
+        run.Pedestrians = [walker];
+        Check(run.Open() && run.ClockTime == 9 * 60, "daylight trading starts at nine");
+        run.AdvanceShop(5);
+        Customer approaching = run.Customers.Single();
+        Check(approaching.Appearance == walker.Appearance && approaching.Position == walker.Position &&
+            approaching.Travel == walker.Travel && !run.Pedestrians.Contains(walker), "same pedestrian turns toward the shop");
+        Check(approaching.Phase == VisitPhase.Approach && approaching.Route.Contains(run.Entry) &&
+            approaching.Route.Last() == run.Door && run.Today.Visitors == 0, "entry path uses the front door");
+
+        ShopState resumed = TestDiskSave(run);
+        Check(resumed.Customers.Single().Route.SequenceEqual(approaching.Route) &&
+            resumed.Customers[0].StreetLane == 7 && resumed.StreetClock == run.StreetClock, "saved sidewalk approach");
+        while (run.Today.Visitors == 0 && run.Minute < 85)
+            run.AdvanceShop(1);
+        Check(approaching.Position == run.Door && run.Today.Visitors == 1 && approaching.Phase == VisitPhase.Browse,
+            "visit counted when crossing into the shop");
+        for (int tick = 0; tick < 300 && run.Customers.Contains(approaching); tick++)
+            run.AdvanceShop(1);
+        Check(!run.Customers.Contains(approaching) && run.Pedestrians.Any(person => person.Appearance == walker.Appearance &&
+            person.Position.Y == walker.Position.Y && person.Direction == walker.Direction), "customer rejoins the sidewalk on exit");
+
+        run.AdvanceShop(800);
+        Check(run.Shift == Shift.Closed && run.ClockTime == 18 * 60 && run.Customers.Count == 0, "evening after the last shopper leaves");
+        long eveningStreet = run.StreetMinutes;
+        run.AdvanceShop(8);
+        Check(run.StreetMinutes == eveningStreet + 8 && run.ClockTime == 18 * 60, "evening foot traffic runs at game speed");
+        run.Tomorrow();
+        Check(run.Shift == Shift.Setup && run.ClockTime == 8 * 60, "next day goes back to morning");
     }
 
     private static void Furnish(ShopState run)

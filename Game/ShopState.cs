@@ -277,9 +277,14 @@ internal sealed partial class ShopState
         if (Shift != Shift.Open)
             return;
 
-        foreach (Customer customer in Customers.Where(person => person.Result == 0))
-            foreach (BasketItem item in customer.Basket)
-                Stock[item.Toy]++;
+        foreach (Customer customer in Customers)
+        {
+            if (customer.Result == 0)
+                foreach (BasketItem item in customer.Basket)
+                    Stock[item.Toy]++;
+            if (customer.StreetDirection != 0)
+                RejoinSidewalk(customer);
+        }
         Customers.Clear();
         Replenish();
         Spend(DailyRent);
@@ -314,7 +319,6 @@ internal sealed partial class ShopState
         Yesterday = Today;
         Today = new Till();
         Minute = 0;
-        ShopRemainder = 0;
         Shift = Shift.Setup;
         Note(Fair ? $"{Catalog.Fairs[Season]} is on today" : "A new day on Alder Lane");
     }

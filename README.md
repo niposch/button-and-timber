@@ -7,6 +7,7 @@ A small toy-shop sim set on Alder Lane. Make toys in the back room, find out wha
 Import `project.godot` in **Godot 4.7.2 .NET** with the **.NET SDK** installed. Press **F5** to build and run the game.
 
 - **Shop** · Place the register and a display, then assign a toy. Displays refill from reserve. Match shoppers' symbols to your display tags. In the layout's **Decor** picker, buy a decoration or make it at the workshop. Each style brings in visitors. Seasonal pieces boost their toy family's demand during the matching season.
+- **Street** · Morning light marks setup, daylight marks trading, and streetlamps come on toward closing. Pedestrians follow the speed controls, walk through the shop door when they visit, and return to the sidewalk on their way out.
 - **Workshop** · Type up to 250 for a batch, or use **− / +**. Follow the tool bubble with **WASD**, the arrows, a controller D-pad, or the on-screen pad. Each machine handles a full pass before the cart carries the batch to its next station. **Set aside** saves unfinished work and **Resume** continues it using the same materials.
 - **Blueprints** · 22 toys span four tiers. Each blueprint has its own levels, costs, and yield. Follow the Pip Engine through the Signal Cabin and Train Yard to reach the Midnight Express.
 - **Orders** · Fill seasonal and showcase requests, upgrade cart capacity, or rent a larger stockroom. A full stockroom pauses finished output while the workshop holds the batch. Bigger stockrooms raise the rent charged at closing.
