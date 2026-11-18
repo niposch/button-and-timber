@@ -176,7 +176,7 @@ internal sealed partial class ShopState
         return blocked.All(place => place.Neighbors().Any(walkable.ContainsKey));
     }
 
-    public Display? PlaceFixture(Fixture fixture, Cell tile)
+    public Display? PlaceFixture(Fixture fixture, Cell tile, bool flipped = false)
     {
         int price = FurnitureCost(fixture);
         bool owned = Furniture[(int)fixture] > 0;
@@ -189,7 +189,7 @@ internal sealed partial class ShopState
         else
             Spend(price);
 
-        Display item = new() { X = tile.X, Y = tile.Y, Style = fixture };
+        Display item = new() { X = tile.X, Y = tile.Y, Style = fixture, Flipped = flipped };
         Displays.Add(item);
         return item;
     }

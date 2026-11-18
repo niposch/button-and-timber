@@ -135,6 +135,7 @@ public partial class ShopGame
             return;
         HBoxContainer arrange = Row();
         InButton(arrange, "Move", () => BeginPlacement(item.Style, true));
+        InButton(arrange, "Rotate", RotateFixture).TooltipText = "Mirror this piece (R)";
         InButton(arrange, "Pack away", () =>
         {
             if (!state.Pack(item))

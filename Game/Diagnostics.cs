@@ -23,6 +23,7 @@ public partial class ShopGame
             if (index == 3)
             {
                 Furnish(state);
+                state.Displays.First(d => d.Style == Fixture.Display).Flipped = true;
                 state.Open();
                 for (int tick = 0; tick < 140 && state.ReadyToPay == null; tick++)
                     state.AdvanceShop(1);

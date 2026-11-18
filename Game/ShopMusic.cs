@@ -21,7 +21,7 @@ public partial class ShopGame
         if (music == null)
             return;
 
-        music.StreamPaused = state.Muted;
+        music.StreamPaused = state.MusicOff;
         float target = state.Shift == Shift.Closed || state.Minute > 480 ? -25 : room == Room.Workshop ? -23 : -21;
         music.VolumeDb = Mathf.Lerp(music.VolumeDb, target, .02f);
     }

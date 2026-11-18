@@ -23,6 +23,7 @@ public partial class ShopGame : Control
     private int quantity = 5;
     private int speed = 1;
     private bool moving;
+    private bool placingFlip;
     private bool showDecor;
     private bool showWorkshopDecor;
     private Fixture? placing;
@@ -219,6 +220,7 @@ public partial class ShopGame : Control
             case Key.Escape when placing.HasValue: CancelPlacement(); break;
             case Key.Escape when showStockroom: ToggleStockroom(); break;
             case Key.M: ToggleSound(); break;
+            case Key.R: RotateFixture(); break;
             default: return;
         }
 
@@ -228,7 +230,6 @@ public partial class ShopGame : Control
     private BoxContainer body = null!;
     private PanelContainer side = null!;
     private Control sideFooter = null!;
-    private Control brandTitle = null!;
     private Control demandBar = null!;
     private Control leftColumn = null!;
     private Control rankBlock = null!;
@@ -263,7 +264,7 @@ public partial class ShopGame : Control
     private void MakeInterface()
     {
         SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
-        ColorRect backdrop = new() { Color = ToyArt.C("233330"), MouseFilter = MouseFilterEnum.Ignore };
+        ColorRect backdrop = new() { Color = ToyArt.C("141f1d"), MouseFilter = MouseFilterEnum.Ignore };
         AddChild(backdrop);
         backdrop.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
 
@@ -276,46 +277,34 @@ public partial class ShopGame : Control
         shell.AddThemeConstantOverride("separation", 10);
         margin.AddChild(shell);
 
-        PanelContainer top = Frame("2e433d", "43584c", 6, 14, 8);
+        Color muted = ToyArt.C("9db0a2");
+        PanelContainer top = Frame("1b2926", "263832", 6, 16, 7);
         shell.AddChild(top);
         HBoxContainer topRow = new();
         topRow.AddThemeConstantOverride("separation", 14);
         top.AddChild(topRow);
-        TextureRect icon = new()
-        {
-            Texture = GD.Load<Texture2D>("res://Art/Icon.svg"),
-            ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize,
-            StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered,
-            MouseFilter = MouseFilterEnum.Ignore,
-            CustomMinimumSize = new Vector2(46, 46)
-        };
-        topRow.AddChild(icon);
-        Label brand = TextLabel("Button & Timber", 28, Light, true);
-        brand.CustomMinimumSize = new Vector2(290, 0);
-        brandTitle = brand;
-        topRow.AddChild(brand);
 
         HFlowContainer stats = new() { SizeFlagsHorizontal = SizeFlags.ExpandFill };
-        stats.AddThemeConstantOverride("h_separation", 22);
+        stats.AddThemeConstantOverride("h_separation", 30);
         stats.AddThemeConstantOverride("v_separation", 4);
         topRow.AddChild(stats);
-        date = TextLabel("", 19, Light, true);
-        time = TextLabel("", 13, Brass);
-        stats.AddChild(Block(136, date, time));
-        cash = TextLabel("", 25, Brass, true);
-        stats.AddChild(Block(100, cash, TextLabel("Cash", 13, Light)));
-        reputation = TextLabel("", 21, Light, true);
-        stats.AddChild(Block(116, reputation, TextLabel("Reputation", 13, Light)));
-        rankName = TextLabel("", 17, Light, true);
-        rankMeter = Meter(7, true);
-        rankMeter.CustomMinimumSize = new Vector2(120, 7);
-        rankBlock = Block(130, rankName, rankMeter, TextLabel("Rank", 13, Light));
+        date = TextLabel("", 18, Light, true);
+        time = TextLabel("", 12, muted);
+        stats.AddChild(Block(150, date, time));
+        cash = TextLabel("", 21, Brass);
+        stats.AddChild(Block(96, TextLabel("CASH", 10, muted), cash));
+        reputation = TextLabel("", 21, Light);
+        stats.AddChild(Block(96, TextLabel("REPUTATION", 10, muted), reputation));
+        rankName = TextLabel("", 15, Light);
+        rankMeter = Meter(5, true);
+        rankMeter.CustomMinimumSize = new Vector2(120, 5);
+        rankBlock = Block(130, TextLabel("RANK", 10, muted), rankName, rankMeter);
         stats.AddChild(rankBlock);
-        goal = TextLabel("", 15, Cream);
-        goalProgress = Meter(9, true);
-        goalProgress.CustomMinimumSize = new Vector2(190, 9);
-        daysLeft = TextLabel("", 12, ToyArt.C("c1c8a7"));
-        stats.AddChild(Block(260, goal, goalProgress, daysLeft));
+        goal = TextLabel("", 13, Cream);
+        goalProgress = Meter(5, true);
+        goalProgress.CustomMinimumSize = new Vector2(190, 5);
+        daysLeft = TextLabel("", 11, muted);
+        stats.AddChild(Block(250, goal, goalProgress, daysLeft));
 
         options = new MenuButton { Text = "Options", Flat = false, MouseDefaultCursorShape = CursorShape.PointingHand,
             CustomMinimumSize = new Vector2(101, 37), SizeFlagsVertical = SizeFlags.ShrinkCenter };
@@ -323,6 +312,7 @@ public partial class ShopGame : Control
         topRow.AddChild(options);
         PopupMenu menu = options.GetPopup();
         menu.AddCheckItem("Sound effects  (M)", 1);
+        menu.AddCheckItem("Music", 5);
         menu.AddCheckItem("Reduce decorative motion", 2);
         menu.AddSeparator();
         menu.AddItem("Save daybook", 4);
@@ -330,13 +320,18 @@ public partial class ShopGame : Control
         menu.AboutToPopup += () =>
         {
             menu.SetItemChecked(0, !state.Muted);
-            menu.SetItemChecked(1, state.ReducedMotion);
+            menu.SetItemChecked(1, !state.MusicOff);
+            menu.SetItemChecked(2, state.ReducedMotion);
         };
         menu.IdPressed += id =>
         {
             switch (id)
             {
                 case 1: ToggleSound(); break;
+                case 5:
+                    state.MusicOff = !state.MusicOff;
+                    Save();
+                    break;
                 case 2:
                     state.ReducedMotion = !state.ReducedMotion;
                     stage.ReducedMotion = state.ReducedMotion;
@@ -408,7 +403,7 @@ public partial class ShopGame : Control
         };
         left.AddChild(host);
         Panel frame = new() { MouseFilter = MouseFilterEnum.Ignore };
-        frame.AddThemeStyleboxOverride("panel", Box("172c29", "b3ac7e", 4, 0));
+        frame.AddThemeStyleboxOverride("panel", Box("172c29", "3b4a43", 4, 0));
         host.AddChild(frame);
         frame.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
         stage = new StreetView { ClipContents = true, State = state, MouseDefaultCursorShape = CursorShape.PointingHand };
@@ -436,7 +431,7 @@ public partial class ShopGame : Control
         toast.GrowHorizontal = GrowDirection.Both;
         toast.OffsetTop = 14;
 
-        PanelContainer demand = Frame("31483f", "476157", 6, 14, 8);
+        PanelContainer demand = Frame("1b2926", "263832", 6, 14, 8);
         left.AddChild(demand);
         demandBar = demand;
         HFlowContainer demandRow = new();
@@ -573,7 +568,6 @@ public partial class ShopGame : Control
         leftColumn.SizeFlagsStretchRatio = 1;
         demandBar.Visible = !portrait || size.Y >= 820;
         rankBlock.Visible = !portrait;
-        brandTitle.Visible = size.X >= 1060;
         daysLeft.Visible = !portrait;
     }
 
@@ -601,7 +595,7 @@ public partial class ShopGame : Control
     {
         state.CheckedOut -= OnCheckout;
         state.Announced -= ShowToast;
-        state = new ShopState { Muted = state.Muted, ReducedMotion = state.ReducedMotion, Schema = ShopState.CurrentSchema };
+        state = new ShopState { Muted = state.Muted, MusicOff = state.MusicOff, ReducedMotion = state.ReducedMotion, Schema = ShopState.CurrentSchema };
         state.CheckedOut += OnCheckout;
         state.Announced += ShowToast;
         stage.State = state;
@@ -648,8 +642,9 @@ public partial class ShopGame : Control
         {
             if (!state.Move(selectedDisplay, cell))
                 return;
+            selectedDisplay.Flipped = placingFlip;
         }
-        else if (state.PlaceFixture(kind, cell) is Display item)
+        else if (state.PlaceFixture(kind, cell, placingFlip) is Display item)
             selectedDisplay = item;
         else
             return;
@@ -677,6 +672,7 @@ public partial class ShopGame : Control
         stage.Room = room;
         stage.MouseDefaultCursorShape = room == Room.Shop ? CursorShape.PointingHand : CursorShape.Arrow;
         stage.Placement = placing;
+        stage.PlacementFlipped = placingFlip;
         stage.BuildTiles = placing.HasValue ? ValidBuildTiles() : [];
         stage.Selected = selectedDisplay;
         stage.Reading = reading;
@@ -728,10 +724,26 @@ public partial class ShopGame : Control
         showStockroom = false;
         moving = relocate;
         placing = kind;
+        placingFlip = relocate && selectedDisplay != null ? selectedDisplay.Flipped : placingFlip;
         if (!relocate)
             selectedDisplay = null;
         status = "";
         Rebuild();
+    }
+
+    private void RotateFixture()
+    {
+        if (placing.HasValue)
+            placingFlip = !placingFlip;
+        else if (selectedDisplay != null && state.Shift != Shift.Open && !summary && room == Room.Shop)
+        {
+            selectedDisplay.Flipped = !selectedDisplay.Flipped;
+            Play(wood, -16, 1.2f);
+            Save();
+        }
+        else
+            return;
+        Rebuild(true);
     }
 
     private void CancelPlacement()
@@ -897,7 +909,7 @@ public partial class ShopGame : Control
         int hour = minutes / 60;
         time.Text = $"{(hour + 11) % 12 + 1}:{minutes % 60:00} {(hour >= 12 ? "PM" : "AM")}  ·  Year {state.Year}";
         cash.Text = state.Cash < 0 ? $"−${-state.Cash:N0}" : $"${state.Cash:N0}";
-        reputation.Text = $"{state.Reputation} / 100";
+        reputation.Text = $"{state.Reputation}";
         goal.Text = state.Year == 1
             ? $"Shop deed   ${state.Cash:N0} / ${state.YearTarget:N0}"
             : $"Year {state.Year} profit   ${state.Cash - state.YearStartCash:N0} / ${state.YearTarget - state.YearStartCash:N0}";
