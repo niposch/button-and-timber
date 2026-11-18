@@ -106,7 +106,7 @@ internal static class ToyArt
                 Rect(-5, -11, 5, 5, "7f9b8d");
                 Rect(-9, -2, 17, 2, "72483e");
                 break;
-            default:
+            case 9:
                 Rect(-10, -17, 20, 17, "884735");
                 Rect(-8, -14, 16, 11, "43566f");
                 Rect(-9, -14, 4, 12, "bd5c65");
@@ -114,6 +114,44 @@ internal static class ToyArt
                 Rect(-10, -17, 20, 3, "eab16c");
                 Rect(-3, -12, 4, 4, "f3d78e");
                 Rect(-10, -3, 20, 3, "c88058");
+                break;
+            case Catalog.SignalCabin:
+                Rect(-9, -3, 18, 3, "754e43");
+                Rect(-7, -13, 14, 11, "d7ac6e");
+                Poly("8f5e50", (-9, -13), (-3, -20), (5, -20), (9, -13));
+                Rect(-4, -11, 5, 4, "578580");
+                Rect(3, -10, 3, 7, "8f604c");
+                Rect(8, -19, 2, 16, "64675a");
+                Rect(6, -18, 5, 3, "c25e52");
+                break;
+            case Catalog.TrainYard:
+                Rect(-11, -4, 22, 4, "665043");
+                Rect(-10, -12, 20, 9, "ab694f");
+                Rect(-11, -14, 22, 3, "6f7461");
+                Poly("78918a", (-11, -14), (-7, -19), (7, -19), (11, -14));
+                Rect(-7, -10, 5, 6, "594641");
+                Rect(2, -10, 5, 6, "594641");
+                Rect(-6, -6, 4, 3, "e5b060");
+                Rect(3, -6, 4, 3, "83aab0");
+                Rect(-11, -2, 22, 1, "b58353");
+                break;
+            case Catalog.FreightFleet:
+                Rect(-11, -8, 21, 5, "88584a");
+                Rect(-10, -13, 8, 6, "76968b");
+                Rect(1, -12, 8, 5, "ca8d5c");
+                Rect(-8, -16, 4, 4, "d5ba7e");
+                for (int i = 0; i < 4; i++)
+                    Rect(-10 + i * 5, -4, 4, 4, "404d4e");
+                break;
+            case Catalog.PebbleDice:
+                Rect(-9, -11, 10, 10, "d0a771");
+                Rect(-8, -12, 8, 8, "f4dba1");
+                Rect(-6, -10, 2, 2, "7f5146");
+                Rect(-3, -7, 2, 2, "7f5146");
+                Rect(2, -14, 9, 9, "507466");
+                Rect(2, -15, 8, 7, "8fb29c");
+                Rect(4, -13, 2, 2, "f1dfae");
+                Rect(7, -10, 2, 2, "f1dfae");
                 break;
         }
 

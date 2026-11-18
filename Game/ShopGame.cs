@@ -50,18 +50,17 @@ public partial class ShopGame : Control
     private Label goal = null!;
     private ProgressBar goalProgress = null!;
     private Label daysLeft = null!;
-    private Label stageTitle = null!;
     private Label stageState = null!;
     private Label hint = null!;
-    private Label log1 = null!;
-    private Label log2 = null!;
     private Label earnings = null!;
     private Button action = null!;
     private MenuButton options = null!;
     private ConfirmationDialog newCampaign = null!;
     private Button ledger = null!;
+    private Label workshopAttention = null!;
     private readonly List<Button> tabs = [];
     private readonly List<Button> speeds = [];
+    private readonly List<(Button Button, Label Heat, Label Stock)> demandTiles = [];
     private readonly AudioStreamPlayer[] audio = new AudioStreamPlayer[5];
     private int nextAudio;
     private AudioStream bell = null!;
@@ -152,6 +151,32 @@ public partial class ShopGame : Control
             Save();
     }
 
+    public override void _Input(InputEvent input)
+    {
+        if (room != Room.Workshop || summary || state.Orders.Count == 0 ||
+            newCampaign == null || newCampaign.Visible || options.GetPopup().Visible)
+            return;
+
+        Tool? tool = input switch
+        {
+            InputEventKey { Pressed: true, Echo: false } key => key.Keycode switch
+            {
+                Key.Up => Tool.Saw, Key.Right => Tool.Mallet, Key.Down => Tool.Brush, Key.Left => Tool.Needle, _ => null
+            },
+            InputEventJoypadButton { Pressed: true } pad => pad.ButtonIndex switch
+            {
+                JoyButton.DpadUp => Tool.Saw, JoyButton.DpadRight => Tool.Mallet,
+                JoyButton.DpadDown => Tool.Brush, JoyButton.DpadLeft => Tool.Needle, _ => null
+            },
+            _ => null
+        };
+        if (tool is Tool selected)
+        {
+            Strike(selected);
+            GetViewport().SetInputAsHandled();
+        }
+    }
+
     public override void _UnhandledKeyInput(InputEvent input)
     {
         if (input is not InputEventKey { Pressed: true, Echo: false } key)
@@ -162,10 +187,6 @@ public partial class ShopGame : Control
             case Key.Key1: OpenRoom(Room.Shop); break;
             case Key.Key2: OpenRoom(Room.Workshop); break;
             case Key.Key3: OpenRoom(Room.Town); break;
-            case Key.A when room == Room.Workshop: Strike(Tool.Saw); break;
-            case Key.S when room == Room.Workshop: Strike(Tool.Mallet); break;
-            case Key.D when room == Room.Workshop: Strike(Tool.Brush); break;
-            case Key.F when room == Room.Workshop: Strike(Tool.Needle); break;
             case Key.Escape when placing.HasValue: CancelPlacement(); break;
             case Key.M: ToggleSound(); break;
             default: return;
@@ -254,14 +275,15 @@ public partial class ShopGame : Control
             tab.TooltipText = $"Open {destination.ToString().ToLowerInvariant()} ({index + 1})";
             tabs.Add(tab);
             Place(this, tab, 16 + index * 139, 105, 132, 37);
+            if (destination == Room.Workshop)
+                workshopAttention = Put(tab, "✦", 109, 1, 18, 34, 14, Brass);
         }
 
-        Put(this, "Speed", 609, 105, 51, 37, 13, Cream);
         int speedX = 662;
         foreach (int rate in Rates)
         {
             int width = rate == 0 ? 62 : 49;
-            Button button = MakeButton(rate == 0 ? "Pause" : $"{rate}×", () =>
+            Button button = MakeButton(rate == 0 ? "Ⅱ" : $"{rate}×", () =>
             {
                 speed = rate;
                 UpdateReadouts();
@@ -281,17 +303,28 @@ public partial class ShopGame : Control
         stage.TilePicked = PlaceDisplay;
         stage.EmptyFloorPicked = ClearSelection;
         Place(this, stage, 20, 153, 869, 527);
-        MakeBenchStrip();
-        stageTitle = Put(this, "", 39, 164, 298, 36, 26, ToyArt.C("273f36"), true);
-        stageState = Put(this, "", 41, 200, 270, 23, 14, ToyArt.C("344a3e"));
-        Rectangle(this, 20, 650, 869, 30, "324c43");
-        hint = Put(this, "", 34, 650, 839, 30, 13, Cream);
+        MakeCraftPad();
+        stageState = Put(this, "", 39, 171, 272, 29, 20, ToyArt.C("273f36"), true);
+        hint = Put(this, "", 39, 641, 720, 31, 15, ToyArt.C("273f36"));
 
         Rectangle(this, 16, 695, 877, 90, "476157");
         Rectangle(this, 18, 697, 873, 86, "31483f");
-        Put(this, "Daybook", 31, 703, 104, 24, 17, Light, true);
-        log1 = Put(this, "", 32, 730, 623, 20, 14, Cream);
-        log2 = Put(this, "", 32, 751, 623, 20, 13, ToyArt.C("b6c0a2"));
+        Put(this, "Today’s demand", 32, 710, 160, 31, 18, Light, true);
+        foreach (ToyFamily family in Catalog.Families)
+        {
+            ToyFamily target = family;
+            Button tile = MakeButton("", () =>
+            {
+                int root = Array.FindIndex(Catalog.Toys, toy => toy.Family == target && toy.Prerequisite < 0);
+                selectedToy = root;
+                OpenRoom(Room.Workshop);
+            }, dark: true);
+            Place(this, tile, 196 + (int)family * 111, 711, 102, 58);
+            Place(tile, new FamilyIcon { Family = family, MouseFilter = MouseFilterEnum.Ignore }, 8, 7, 41, 41);
+            Label heat = Put(tile, "", 55, 7, 44, 20, 12, Brass);
+            Label stock = Put(tile, "", 58, 28, 43, 20, 12, Cream);
+            demandTiles.Add((tile, heat, stock));
+        }
         Rectangle(this, 663, 709, 1, 59, "667968");
         earnings = Put(this, "", 678, 707, 198, 26, 14, Cream);
         ledger = MakeButton("Till report", () =>
@@ -303,10 +336,10 @@ public partial class ShopGame : Control
 
         Rectangle(this, 905, 105, 359, 680, "a38b67");
         Rectangle(this, 907, 107, 355, 676, "eadbbc");
-        Rectangle(this, 909, 109, 351, 67, "f2e5c7");
-        Rectangle(this, 910, 175, 349, 1, "b4a17b");
-        panelTitle = Put(this, "", 925, 112, 319, 39, 26, Ink, true);
-        panelContext = Put(this, "", 926, 150, 316, 19, 13, Faded);
+        Rectangle(this, 909, 109, 351, 57, "f2e5c7");
+        Rectangle(this, 910, 165, 349, 1, "b4a17b");
+        panelTitle = Put(this, "", 925, 111, 319, 33, 25, Ink, true);
+        panelContext = Put(this, "", 926, 144, 316, 17, 12, Faded);
 
         scroll = new ScrollContainer
         {
@@ -314,7 +347,7 @@ public partial class ShopGame : Control
             VerticalScrollMode = ScrollContainer.ScrollMode.Auto,
             FollowFocus = true
         };
-        Place(this, scroll, 924, 189, 325, 528);
+        Place(this, scroll, 924, 178, 325, 539);
         Rectangle(this, 908, 727, 353, 54, "e2d2ad");
         Rectangle(this, 910, 727, 349, 1, "b4a17b");
         action = MakeButton("", AdvanceDay, strong: true);
@@ -492,29 +525,20 @@ public partial class ShopGame : Control
 
     private void CustomerPanel(Customer customer)
     {
-        Header(customer.Name, "Customer");
-        var (_, caption) = ToyRow(customer.Wanted);
-        caption.Text = Catalog.Toys[customer.Wanted].Name;
-        caption.AddThemeColorOverride("font_color", Ink);
-        Label mood = Line("", 19, Ink, true);
-        Paragraph($"Budget ${customer.Budget} · Listed at ${state.Prices[customer.Wanted]}");
-        Label stock = Line("", 14, Faded);
+        Header(customer.Name, "");
+        var (card, caption) = ToyRow(customer.WantsExact ? customer.Wanted : Catalog.FamilyIcons[(int)customer.Family]);
+        AddFamilyBadge(card, customer.Family);
+        caption.Text = customer.WantsExact ? Catalog.Toys[customer.Wanted].Name : customer.Family.ToString();
+        Label mood = Line("", 14, Faded);
         Sync(() =>
         {
             mood.Text = customer.Result switch
             {
-                1 => "Paid and heading out", -1 => "Leaving empty-handed",
-                _ when customer.Phase == VisitPhase.Checkout => $"Checking out · {customer.Basket.Count} in basket",
-                _ when customer.Basket.Count > 0 => "Still browsing · 1 in basket",
-                _ => "Looking around"
+                1 => "Paid", -1 => "Leaving", _ when customer.Phase == VisitPhase.Checkout => "Checkout",
+                _ => $"${customer.Budget} budget"
             };
-            stock.Text = $"{state.StockOnDisplay(customer.Wanted)} on display · {state.Stock[customer.Wanted]} in back room";
         });
-        AddButton("Back to shop floor", () =>
-        {
-            reading = null;
-            Rebuild();
-        });
+        AddButton("‹  Shop floor", ClearSelection);
     }
 
     private void TillPanel()
@@ -541,19 +565,16 @@ public partial class ShopGame : Control
         Divider();
         Stat("Net cash", () => ShopState.Signed(today.Net), ShopState.Signed(previous.Net));
         Divider();
-        Line("Unmet requests", 17, Ink, true);
-        Label demand = Paragraph("");
-        Sync(() =>
+        Line("Unmet demand", 17, Ink, true);
+        HBoxContainer shortages = Row();
+        foreach (ToyFamily family in Catalog.Families)
         {
-            Till source = today.Visitors > 0 ? today : previous;
-            var wants = Catalog.Toys
-                .Select((toy, i) => (toy.Name, Count: source.Requests[i]))
-                .Where(entry => entry.Count > 0)
-                .OrderByDescending(entry => entry.Count)
-                .Take(4);
-            string results = string.Join("\n", wants.Select(entry => $"{entry.Count}  {entry.Name}"));
-            demand.Text = results.Length > 0 ? results : "No unmet requests yet.";
-        });
+            Control figure = new() { CustomMinimumSize = new Vector2(68, 37), TooltipText = family.ToString() };
+            shortages.AddChild(figure);
+            Place(figure, new FamilyIcon { Family = family, MouseFilter = MouseFilterEnum.Ignore }, 0, 2, 32, 32);
+            Label count = Put(figure, "", 36, 2, 30, 32, 15, Ink);
+            Sync(() => count.Text = state.Shortages(today.Visitors > 0 ? today : previous, family).ToString());
+        }
         AddButton("Return to " + room.ToString().ToLowerInvariant(), () =>
         {
             summary = false;
@@ -574,6 +595,8 @@ public partial class ShopGame : Control
 
     private void AdvanceDay()
     {
+        if (state.Shift == Shift.Setup && placing.HasValue)
+            return;
         status = "";
         reading = null;
         moving = false;
@@ -581,6 +604,19 @@ public partial class ShopGame : Control
         switch (state.Shift)
         {
             case Shift.Setup:
+                if (state.Register == null)
+                {
+                    BeginPlacement(Fixture.Register, false);
+                    return;
+                }
+                if (!state.Displays.Any(display => display.Count > 0))
+                {
+                    if (state.Displays.Find(display => display.Capacity > 0) is Display display)
+                        PickDisplay(display);
+                    else
+                        BeginPlacement(Fixture.Display, false);
+                    return;
+                }
                 if (speed == 0)
                     speed = 1;
                 if (!state.Open())
@@ -638,44 +674,35 @@ public partial class ShopGame : Control
         daysLeft.Text = state.Day > ShopState.CampaignDays ? "The shop is open for another year." :
             remaining == 1 ? "Final day for the deed" : $"{remaining} days to earn the deed";
 
-        stageTitle.Text = room switch
-        {
-            Room.Workshop => "The workshop",
-            Room.Town => "Market square",
-            _ => "The storefront"
-        };
         stageState.Text = room switch
         {
-            Room.Workshop => state.Orders.Count > 0 ? "At the bench" : "Choose a pattern",
-            Room.Town => state.Fair ? Catalog.Fairs[state.Season] : "Alder Lane",
+            Room.Workshop => "",
+            Room.Town => state.Fair ? Catalog.Fairs[state.Season] : "",
             _ => state.Shift switch
             {
-                Shift.Setup => "Before opening",
-                Shift.Open when state.Minute >= ShopState.ShopHours => "Last shoppers checking out",
-                Shift.Open => "Doors open",
-                _ => "Closed for the evening"
+                Shift.Setup => "",
+                Shift.Open when state.Minute >= ShopState.ShopHours => "Closing",
+                Shift.Open => "Open",
+                _ => "Closed"
             }
         };
-        hint.Text = placing.HasValue ? "Click a highlighted tile to place the fixture. Esc cancels." :
-            status.Length > 0 ? status :
-            room switch
-            {
-                Room.Workshop => "Use A, S, D, F or click a tool when prompted. Correct strokes speed up the batch.",
-                Room.Town => "Town orders come out of reserve stock.",
-                _ => state.Shift switch
-                {
-                    Shift.Setup => "Place a register and assign a toy to a display to open.",
-                    Shift.Open => "Click a shopper to see what they want, or click the register to ring them up.",
-                    _ => "Check unmet requests in the till report before making tomorrow’s stock."
-                }
-            };
-        log1.Text = state.Notes.FirstOrDefault() ?? "";
-        log2.Text = state.Notes.Skip(1).FirstOrDefault() ?? "";
-        earnings.Text = $"Today   {state.Today.Sold} sold  ·  ${state.Today.Revenue}";
+        hint.Text = status;
+        foreach (ToyFamily family in Catalog.Families)
+        {
+            var tile = demandTiles[(int)family];
+            int heat = state.Forecast(family);
+            bool stock = state.StocksFamily(family);
+            tile.Heat.Text = new string('•', heat);
+            tile.Stock.Text = stock ? "✓" : "—";
+            tile.Button.TooltipText = $"{family} · demand {heat}/4 · {(stock ? "on display" : "none on display")}";
+        }
+        earnings.Text = $"{state.Today.Sold} sold   ·   ${state.Today.Revenue}";
         action.Text = state.Shift switch
         {
-            Shift.Setup when state.Register == null => "Place a register to open",
-            Shift.Setup when !state.Displays.Any(display => display.Count > 0) => "Stock a display to open",
+            Shift.Setup when placing.HasValue => "Pick a tile",
+            Shift.Setup when state.Register == null => "Place a register",
+            Shift.Setup when !state.Displays.Any(display => display.Capacity > 0) => "Place a shelf",
+            Shift.Setup when !state.Displays.Any(display => display.Count > 0) => "Stock a display",
             Shift.Setup => "Open shop",
             Shift.Open when room != Room.Shop => "Back to shop",
             Shift.Open when state.ReadyToPay is Customer next => $"Ring up · ${next.Basket.Sum(item => item.Price)}",
@@ -683,17 +710,21 @@ public partial class ShopGame : Control
             _ when state.Day == ShopState.CampaignDays => "Continue in free play",
             _ => "Start next day"
         };
-        action.Disabled = (state.Shift == Shift.Setup &&
-            (state.Register == null || !state.Displays.Any(display => display.Count > 0))) ||
+        action.Disabled = (state.Shift == Shift.Setup && placing.HasValue) ||
             (state.Shift == Shift.Open && room == Room.Shop && state.ReadyToPay == null);
-        ledger.Text = summary ? "Close till report" : "Till report";
+        action.Visible = summary || room == Room.Shop;
+        ledger.Text = summary ? "Close report" : "Till report";
+        ledger.TooltipText = state.Notes.FirstOrDefault() ?? "";
 
         for (int i = 0; i < tabs.Count; i++)
             SelectedStyle(tabs[i], i == (int)room, true);
+        workshopAttention.Visible = room != Room.Workshop && state.Prompt.HasValue &&
+            state.Orders.FirstOrDefault() is Order pending && state.NeedsHands(pending.Toy);
+        tabs[(int)Room.Workshop].TooltipText = workshopAttention.Visible ? "An order is waiting for a tool (2)" : "Workshop (2)";
         for (int i = 0; i < speeds.Count; i++)
             SelectedStyle(speeds[i], speed == Rates[i], true);
         stage.Paused = speed == 0;
-        UpdateBenchStrip();
+        UpdateCraftPad();
 
         foreach (Action read in refresh)
             read();

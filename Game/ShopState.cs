@@ -3,26 +3,42 @@ namespace ButtonAndTimber;
 internal enum Room { Shop, Workshop, Town }
 internal enum Shift { Setup, Open, Closed }
 internal enum Fixture { Display, Table, Register, Plant }
+internal enum ToyFamily { Trains, Plush, Motion, Games }
+internal enum Station { Bench, Sewing, Assembly, Finishing }
 
-internal sealed record Toy(string Name, string Family, int Materials, int Value, int Time,
-    int Research, int Prerequisite, int Practice, int Season);
+internal sealed record Toy(string Name, ToyFamily Family, Station Station, int Materials, int Value,
+    int Tier, int BaseYield, int Research, int Prerequisite, int RequiredLevel);
 
 internal static class Catalog
 {
+    public const int Engine = 1;
+    public const int Whirligig = 2;
+    public const int SignalCabin = 10;
+    public const int TrainYard = 11;
+    public const int FreightFleet = 12;
+    public const int PebbleDice = 13;
+
     public static readonly Toy[] Toys =
     [
-        new("Pocket Bear", "Plush", 5, 15, 4, 0, -1, 0, 3),
-        new("Pip Engine", "Woodwork", 7, 21, 5, 0, -1, 0, 0),
-        new("Whirligig", "Woodwork", 3, 10, 3, 0, -1, 0, 1),
-        new("Tin Comet", "Mechanics", 10, 30, 6, 34, 1, 6, 1),
-        new("Dapple Hare", "Plush", 8, 24, 5, 26, 0, 5, 0),
-        new("Orchard Checkers", "Games", 10, 29, 6, 40, 2, 6, 2),
-        new("Sailcloth Sloop", "Woodwork", 13, 38, 7, 55, 1, 12, 1),
-        new("Wind-up Finch", "Mechanics", 16, 46, 8, 68, 3, 7, 0),
-        new("Patchwork Pony", "Plush", 13, 41, 7, 60, 4, 8, 2),
-        new("Moonlight Theatre", "Games", 23, 64, 10, 94, 5, 9, 3)
+        new("Pocket Bear", ToyFamily.Plush, Station.Sewing, 5, 15, 1, 94, 0, -1, 0),
+        new("Pip Engine", ToyFamily.Trains, Station.Bench, 7, 21, 1, 93, 0, -1, 0),
+        new("Whirligig", ToyFamily.Motion, Station.Finishing, 3, 10, 1, 97, 0, -1, 0),
+        new("Tin Comet", ToyFamily.Motion, Station.Assembly, 11, 32, 2, 81, 32, Whirligig, 2),
+        new("Dapple Hare", ToyFamily.Plush, Station.Sewing, 8, 24, 2, 86, 26, 0, 2),
+        new("Orchard Checkers", ToyFamily.Games, Station.Finishing, 10, 30, 2, 83, 34, PebbleDice, 2),
+        new("Sailcloth Sloop", ToyFamily.Motion, Station.Bench, 13, 38, 2, 77, 49, Whirligig, 3),
+        new("Wind-up Finch", ToyFamily.Motion, Station.Assembly, 17, 55, 3, 68, 65, 3, 3),
+        new("Patchwork Pony", ToyFamily.Plush, Station.Sewing, 15, 47, 3, 71, 58, 4, 3),
+        new("Moonlight Theatre", ToyFamily.Games, Station.Assembly, 24, 72, 3, 63, 85, 5, 3),
+        new("Signal Cabin", ToyFamily.Trains, Station.Bench, 12, 37, 2, 82, 34, Engine, 2),
+        new("Alder Train Yard", ToyFamily.Trains, Station.Assembly, 24, 79, 3, 60, 85, SignalCabin, 3),
+        new("Freight Fleet", ToyFamily.Trains, Station.Bench, 15, 44, 2, 76, 48, Engine, 3),
+        new("Pebble Dice", ToyFamily.Games, Station.Finishing, 4, 13, 1, 96, 0, -1, 0)
     ];
 
+    public static readonly ToyFamily[] Families = Enum.GetValues<ToyFamily>();
+    public static readonly ToyFamily[] SeasonalDemand = [ToyFamily.Trains, ToyFamily.Motion, ToyFamily.Games, ToyFamily.Plush];
+    public static readonly int[] FamilyIcons = [Engine, 0, Whirligig, PebbleDice];
     public static readonly string[] Seasons = ["Spring", "Summer", "Autumn", "Winter"];
     public static readonly string[] Fairs = ["Kite Sunday", "Harbour Fair", "Orchard Market", "Lantern Walk"];
     public static readonly int[] CommissionToys = [1, 3, 5, 0];
@@ -48,6 +64,7 @@ internal sealed class Order
     public int Step { get; set; }
     public int Grade { get; set; }
     public double PromptIn { get; set; } = .65;
+    public Tool[] Plan { get; set; } = [];
 }
 
 internal sealed partial class Customer
@@ -95,10 +112,10 @@ internal sealed partial class ShopState
     public int DeedSavings { get; set; }
     public bool[] Commissions { get; set; } = new bool[4];
     public uint Seed { get; set; } = 0x639dc755;
-    public int[] Stock { get; set; } = [7, 6, 7, 0, 0, 0, 0, 0, 0, 0];
+    public int[] Stock { get; set; } = [7, 6, 7, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 6];
     public int[] Prices { get; set; } = Catalog.Toys.Select(toy => toy.Value).ToArray();
     public int[] Practice { get; set; } = new int[Catalog.Toys.Length];
-    public bool[] Unlocked { get; set; } = [true, true, true, false, false, false, false, false, false, false];
+    public bool[] Unlocked { get; set; } = Catalog.Toys.Select(toy => toy.Prerequisite < 0).ToArray();
     public List<Display> Displays { get; set; } = [];
     public List<Order> Orders { get; set; } = [];
     public List<Customer> Customers { get; set; } = [];
@@ -112,9 +129,16 @@ internal sealed partial class ShopState
     public bool Fair => Date is 5 or 6;
     public int Width => Expanded ? 9 : 7;
     public int StockOnDisplay(int toy) => Displays.Where(display => display.Toy == toy).Sum(display => display.Count);
-    public int ToyCost(int toy) => Math.Max(2, Catalog.Toys[toy].Materials - Level(toy) * 2);
-    public int Level(int toy) => Math.Min(2, Practice[toy] / 8);
-    public int Yield(int toy) => 91 - Catalog.Toys[toy].Research / 9 + Level(toy) * 4;
+    private static readonly int[] LevelExperience = [0, 4, 12, 23, 38];
+    public int ToyCost(int toy) => Math.Max(2, (int)Math.Round(Catalog.Toys[toy].Materials * (1 - (Level(toy) - 1) * .09)));
+    public int Level(int toy) => Array.FindLastIndex(LevelExperience, xp => Practice[toy] >= xp) + 1;
+    public int Yield(int toy) => Math.Min(99, Catalog.Toys[toy].BaseYield + (Level(toy) - 1) * 8);
+    public double MasteryProgress(int toy)
+    {
+        int level = Level(toy);
+        return level == LevelExperience.Length ? 1 :
+            (Practice[toy] - LevelExperience[level - 1]) / (double)(LevelExperience[level] - LevelExperience[level - 1]);
+    }
     public int CommissionToy => Catalog.CommissionToys[Season];
     public int CommissionCount => 4 + (Season is 1 or 2 ? 1 : 0);
     public int CommissionPay => Catalog.Toys[CommissionToy].Value * CommissionCount + 32;
@@ -122,8 +146,14 @@ internal sealed partial class ShopState
     public bool CanResearch(int toy)
     {
         Toy recipe = Catalog.Toys[toy];
-        return !Unlocked[toy] && recipe.Prerequisite >= 0 &&
-            Practice[recipe.Prerequisite] >= recipe.Practice && Cash >= recipe.Research;
+        return MeetsPrerequisite(toy) && Cash >= recipe.Research;
+    }
+
+    public bool MeetsPrerequisite(int toy)
+    {
+        Toy recipe = Catalog.Toys[toy];
+        return !Unlocked[toy] && recipe.Prerequisite >= 0 && Unlocked[recipe.Prerequisite] &&
+            Level(recipe.Prerequisite) >= recipe.RequiredLevel;
     }
 
     public bool Research(int toy)
@@ -144,7 +174,9 @@ internal sealed partial class ShopState
             return false;
 
         Spend(cost);
-        Orders.Add(new Order { Toy = toy, Remaining = quantity });
+        Order order = new() { Toy = toy, Remaining = quantity };
+        PrepareUnit(order);
+        Orders.Add(order);
         return true;
     }
 

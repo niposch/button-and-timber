@@ -10,13 +10,14 @@ public partial class ShopGame
         await ToSignal(RenderingServer.Singleton, RenderingServer.SignalName.FramePostDraw);
         string prefix = Path.GetFullPath(destination);
         Directory.CreateDirectory(Path.GetDirectoryName(prefix)!);
-        for (int index = 0; index < 4; index++)
+        for (int index = 0; index < 5; index++)
         {
-            OpenRoom(index < 3 ? (Room)index : Room.Shop);
+            OpenRoom(index < 3 ? (Room)index : index == 3 ? Room.Shop : Room.Workshop);
             if (index == 1)
             {
                 state.Queue(1, 5);
                 state.AdvanceBench(.75, true);
+                Rebuild();
             }
             if (index == 3)
             {
@@ -26,6 +27,19 @@ public partial class ShopGame
                     state.AdvanceShop(1);
                 state.RingUp();
                 Rebuild();
+            }
+            if (index == 4)
+            {
+                state.Orders.Clear();
+                state.Cash = 395;
+                state.Practice[Catalog.Engine] = 17;
+                state.Practice[Catalog.SignalCabin] = 13;
+                state.Unlocked[Catalog.SignalCabin] = true;
+                state.Research(Catalog.TrainYard);
+                selectedToy = Catalog.TrainYard;
+                state.Queue(selectedToy, 3);
+                Rebuild();
+                await ToSignal(GetTree().CreateTimer(1.05), SceneTreeTimer.SignalName.Timeout);
             }
 
             UpdateReadouts();
@@ -46,8 +60,9 @@ public partial class ShopGame
     {
         try
         {
-            Check(state.Displays.Count == 0 && action.Disabled && !state.Open(), "empty shop at start");
-            BeginPlacement(Fixture.Register, false);
+            Check(state.Displays.Count == 0 && action.Text == "Place a register" && !state.Open(), "empty shop at start");
+            AdvanceDay();
+            Check(placing == Fixture.Register, "first action leads to register placement");
             PlaceDisplay(new Cell(5, 2));
             Check(state.Register == selectedDisplay && state.Furniture[(int)Fixture.Register] == 0, "place register");
             BeginPlacement(Fixture.Display, false);
@@ -65,25 +80,37 @@ public partial class ShopGame
             int before = state.StockOnDisplay(1) + state.Stock[1];
             Check(state.Queue(1, 7), "batch order");
             state.AdvanceBench(.7, true);
-            Check(state.Prompt == Tool.Saw, "first tool prompt");
-            using (InputEventKey key = new() { Pressed = true, Keycode = Key.A })
-                _UnhandledKeyInput(key);
-            Check(state.Orders[0].Step == 1 && state.Orders[0].Grade == 7, "correct stroke");
+            Check(state.Prompt.HasValue, "first tool prompt");
+            Key[] arrows = [Key.Up, Key.Right, Key.Down, Key.Left];
+            using (InputEventKey key = new() { Pressed = true, Keycode = arrows[(int)state.Prompt!.Value] })
+                _Input(key);
+            Check(state.Orders[0].Step == 1 && state.Orders[0].Grade == 10, "correct keyboard arrow");
             state.AdvanceBench(.6, true);
-            int originalChance = state.CraftChance(state.Orders[0]);
-            craftButtons[(int)Tool.Needle].EmitSignal(Button.SignalName.Pressed);
-            Check(state.Orders[0].Step == 2 && state.CraftChance(state.Orders[0]) < originalChance - 40,
-                "bad stroke sharply lowers yield");
+            int step = state.Orders[0].Step;
+            int remaining = state.Orders[0].Remaining;
+            craftButtons[(int)state.Prompt!.Value].EmitSignal(Button.SignalName.Pressed);
+            Check(state.Orders[0].Step == step + 1 || state.Orders[0].Remaining == remaining - 1,
+                "the matching onscreen direction answers the prompt");
+            state.AdvanceBench(.75, true);
+            step = state.Orders[0].Step;
+            remaining = state.Orders[0].Remaining;
+            JoyButton[] directions = [JoyButton.DpadUp, JoyButton.DpadRight, JoyButton.DpadDown, JoyButton.DpadLeft];
+            using (InputEventJoypadButton key = new() { Pressed = true, ButtonIndex = directions[(int)state.Prompt!.Value] })
+                _Input(key);
+            Check(state.Orders[0].Step == step + 1 || state.Orders[0].Remaining == remaining - 1,
+                "controller D-pad answers the prompt");
             state.AdvanceBench(200);
-            Check(state.Orders.Count == 0 && state.Practice[1] == 7 &&
+            Check(state.Orders.Count == 0 && state.Level(1) >= 2 &&
                 state.StockOnDisplay(1) + state.Stock[1] > before, "starter recipe works unattended");
-            Check(state.Research(3) && state.Queue(3, 1), "research and queue harder pattern");
+            Check(state.LastBatch is { Remaining: 0 } batch && batch.Made + batch.Scrapped == 7, "finished batch totals");
+            int cabin = Catalog.SignalCabin;
+            Check(state.Research(cabin) && state.Queue(cabin, 1), "research and queue harder pattern");
             state.AdvanceBench(100);
-            Check(state.Prompt == Tool.Mallet && state.Orders[0].Work == 0, "hard recipe waits offscreen");
+            Check(state.Prompt.HasValue && state.Orders[0].Work == 0, "hard recipe waits offscreen");
             FinishByHand(state);
-            Check(state.Orders.Count == 0 && state.Stock[3] == 1, "active crafting completes hard recipe");
-            state.Practice[3] = 16;
-            Check(state.Queue(3, 1), "queue mastered recipe");
+            Check(state.Orders.Count == 0 && state.Stock[cabin] == 1, "active crafting completes hard recipe");
+            state.Practice[cabin] = 23;
+            Check(state.Queue(cabin, 1), "queue mastered recipe");
             state.AdvanceBench(50);
             Check(state.Orders.Count == 0, "mastered recipe works unattended");
 
@@ -122,8 +149,9 @@ public partial class ShopGame
             Check(state.Day == 2 && state.Yesterday.Visitors > 0 && state.Today.Visitors == 0, "daily report rollover");
 
             TestLegacySave();
+            TestBlueprintEconomy();
             PlayCampaign();
-            GD.Print("Smoke test passed: furnishing, tool prompts, supervised and mastered recipes, shopping routes, checkout, save migration, and campaign.");
+            GD.Print("Smoke test passed: onboarding, directional prompts, recipe variety, blueprint branches, matching demand, checkout, saves, and campaign.");
             GetTree().Quit();
         }
         catch (Exception error)
@@ -195,6 +223,80 @@ public partial class ShopGame
         run.AdvanceBench(100);
         run.AdvanceShop(550);
         Check(run.Orders.Count == 0 && run.Shift == Shift.Closed, "migrated game stays playable");
+
+        const string secondFormat = """
+            {"Schema":1,"Cash":463,"Stock":[1,2,3,0,0,0,0,0,0,0],"Prices":[16,22,11,30,24,29,38,46,41,64],
+             "Practice":[4,8,2,0,0,0,0,0,0,0],"Unlocked":[true,true,true,false,false,false,false,false,false,false],
+             "Orders":[{"Toy":1,"Remaining":2,"Step":1,"Work":0.7,"PromptIn":0}],
+             "Today":{"Requests":[0,0,1,0,0,0,0,0,0,0]}}
+            """;
+        run = JsonSerializer.Deserialize<ShopState>(secondFormat)!;
+        run.UpgradeSave();
+        Check(run.Cash == 463 && run.Prices[Catalog.Engine] == 22 && run.Practice[Catalog.Engine] == 16 &&
+            run.Unlocked[Catalog.PebbleDice] && run.Stock[Catalog.PebbleDice] == 5 && run.Today.Requests[2] == 1 &&
+            run.Prompt.HasValue, "version-one prices, practice, requests and pending tools migrate");
+    }
+
+    private static void TestBlueprintEconomy()
+    {
+        ShopState run = new() { Schema = ShopState.CurrentSchema, Cash = 1500 };
+        HashSet<int> lengths = [];
+        HashSet<Tool> starters = [];
+        for (int i = 0; i < 16; i++)
+        {
+            run.Practice[Catalog.Whirligig] = 0;
+            Check(run.Queue(Catalog.Whirligig, 1), "queue whirligig");
+            lengths.Add(run.Orders[0].Plan.Length);
+            starters.Add(run.Orders[0].Plan[0]);
+            run.AdvanceBench(20);
+        }
+        Check(lengths.SetEquals([1, 2]) && starters.Count > 1, "whirligig alternates prompt count and first tool");
+        Check(!run.CanResearch(Catalog.TrainYard), "advanced train locked behind an intermediate blueprint");
+        Check(run.Queue(Catalog.Engine, 4), "practice engine");
+        FinishByHand(run);
+        Check(run.Level(Catalog.Engine) >= 2 && run.Research(Catalog.SignalCabin), "training opens rail branch");
+        Check(run.Queue(Catalog.SignalCabin, 6), "practice cabin");
+        FinishByHand(run);
+        Check(run.Research(Catalog.TrainYard), "cabin mastery opens train yard");
+        int yard = Catalog.TrainYard;
+        Check(run.Yield(yard) < run.Yield(Catalog.Engine) && run.ToyCost(yard) < run.Prices[yard] &&
+            run.Prices[yard] - run.ToyCost(yard) > run.Prices[Catalog.Engine] - run.ToyCost(Catalog.Engine),
+            "advanced train has more risk and more upside");
+        Check(run.Queue(yard, 2) && run.ActiveStation == Station.Assembly, "train yard uses the assembly machine");
+        run.AdvanceBench(.75, true);
+        int baseChance = run.CraftChance(run.Orders[0]);
+        Tool wrong = Tools.First(tool => tool != run.Prompt);
+        Check(run.UseTool(wrong) && run.CraftChance(run.Orders[0]) < baseChance - 40, "wrong tools increase defects sharply");
+
+        ShopState saved = TestDiskSave(run);
+        Check(run.Orders[0].Plan.SequenceEqual(saved.Orders[0].Plan) && run.BenchSeed == saved.BenchSeed,
+            "random plan and progress are saved");
+        FinishByHand(run);
+        FinishByHand(saved);
+        Check(run.Stock[yard] == saved.Stock[yard] && run.Practice[yard] == saved.Practice[yard], "craft outcomes survive resume");
+
+        Customer shopper = new() { Wanted = Catalog.Engine };
+        Check(ShopState.Matches(shopper, yard) && !ShopState.Matches(shopper, Catalog.PebbleDice),
+            "another train satisfies rail demand");
+        shopper.WantsExact = true;
+        Check(!ShopState.Matches(shopper, yard), "collector requires the exact blueprint");
+        Check(run.Forecast(ToyFamily.Trains) > run.Forecast(ToyFamily.Games), "spring demand forecast matches category weights");
+
+        run.Stock[yard] = 2;
+        run.PlaceFixture(Fixture.Register, new Cell(5, 2));
+        Display showcase = run.PlaceFixture(Fixture.Table, new Cell(3, 4))!;
+        run.Assign(showcase, yard);
+        Check(run.Open(), "showcase shop opens");
+        shopper.WantsExact = false;
+        shopper.Budget = 120;
+        shopper.Position = new Cell(3, 5);
+        shopper.DisplayCell = new Cell(showcase.X, showcase.Y);
+        run.Customers.Add(shopper);
+        run.AdvanceShop(1);
+        Check(shopper.Basket.Count == 1 && shopper.Basket[0].Toy == yard, "rail shopper chooses the premium train on display");
+        int openingCash = run.Cash;
+        run.AdvanceShop(48);
+        Check(run.Today.Revenue >= 79 && run.Cash >= openingCash + 79, "premium train pays at checkout");
     }
 
     private static void Furnish(ShopState run)
@@ -213,6 +315,8 @@ public partial class ShopGame
     {
         ShopState run = new() { Schema = ShopState.CurrentSchema };
         Furnish(run);
+        Display games = run.PlaceFixture(Fixture.Display, new Cell(2, 1))!;
+        run.Assign(games, Catalog.PebbleDice);
         for (int day = 1; day <= ShopState.CampaignDays; day++)
         {
             if (run.Cash >= 330)

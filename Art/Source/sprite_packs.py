@@ -93,9 +93,11 @@ def apply_skin_tone(scene, color):
                 material.diffuse_color = palette[part]
 
 
-def characters(archive):
+def characters(archive, worker=False):
     prefix = "glTF/"
     for number, model in enumerate(PEOPLE):
+        if worker and number != 7:
+            continue
         scene = setup(model, Vector((0, 0, .54)), 2.23, SIZE)
         animations_before = set(bpy.data.actions)
         path = Path(archive.extract(prefix + model + ".gltf", SCRATCH))
@@ -103,7 +105,7 @@ def characters(archive):
         apply_skin_tone(scene, SKIN_TONES[number])
         actions = {action.name.split(".")[0]: action for action in bpy.data.actions
                    if action not in animations_before}
-        idle, walk = actions["Idle"], actions["Walk"]
+        idle, motion = actions["Idle"], actions["PickUp"] if worker else actions["Walk"]
         width = SIZE * 8
         pixels = array("f", [0]) * (width * SIZE * 4 * 4)
         image_path = SCRATCH / "frame.png"
@@ -112,7 +114,7 @@ def characters(archive):
             pivot.rotation_euler.z = math.pi * .5 * row
             pivot.location = -(pivot.rotation_euler.to_matrix() @ center)
             for col in range(8):
-                action = idle if col == 0 else walk
+                action = idle if col == 0 else motion
                 arm.animation_data.action = action
                 start, end = action.frame_range
                 scene.frame_set(round(start + (end - start) * ((col - 1) / 7 if col else 0)))
@@ -127,7 +129,7 @@ def characters(archive):
                     pixels[dst:dst + SIZE * 4] = frame[src:src + SIZE * 4]
         atlas = bpy.data.images.new(model, width, SIZE * 4, alpha=True)
         atlas.pixels.foreach_set(pixels)
-        atlas.filepath_raw = str(OUTPUT / f"Person{number}.png")
+        atlas.filepath_raw = str(OUTPUT / ("MechanicWork.png" if worker else f"Person{number}.png"))
         atlas.file_format = "PNG"
         atlas.save()
         bpy.data.images.remove(atlas)
@@ -148,8 +150,14 @@ def plants(archive):
 
 
 if __name__ == "__main__":
-    characters_zip, plants_zip = sys.argv[sys.argv.index("--") + 1:]
-    with ZipFile(plants_zip) as furniture:
-        plants(furniture)
-    with ZipFile(characters_zip) as people:
-        characters(people)
+    arguments = sys.argv[sys.argv.index("--") + 1:]
+    if len(arguments) == 2 and arguments[1] == "--worker-only":
+        with ZipFile(arguments[0]) as people:
+            characters(people, worker=True)
+    else:
+        characters_zip, plants_zip = arguments
+        with ZipFile(plants_zip) as furniture:
+            plants(furniture)
+        with ZipFile(characters_zip) as people:
+            characters(people)
+            characters(people, worker=True)

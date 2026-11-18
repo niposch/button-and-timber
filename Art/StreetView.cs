@@ -12,6 +12,7 @@ public partial class StreetView : Control
     internal HashSet<Cell> BuildTiles { get; set; } = [];
     internal bool ReducedMotion { get; set; }
     internal bool Paused { get; set; }
+    internal bool ShowToolPrompt { get; set; }
     internal Action<Display>? DisplayPicked { get; set; }
     internal Action<Customer>? CustomerPicked { get; set; }
     internal Action<Cell>? TilePicked { get; set; }
@@ -26,12 +27,25 @@ public partial class StreetView : Control
     private float clock;
     private float benchFlash;
     private bool cutCleanly;
+    private Station workerStation;
+    private Vector2 workerPosition = new(2.50f, 2.21f);
+    private readonly Queue<Vector2> workerPath = new();
+    private int workerFacing = 3;
+    private static readonly (Vector2 Machine, Vector2 Operator, int Facing, float Height, float Span)[] WorkshopStations =
+    [
+        (new(2.50f, 1.34f), new(2.50f, 2.21f), 3, 39, 3.4f),
+        (new(1.18f, 3.47f), new(2.07f, 3.47f), 0, 35, 2.55f),
+        (new(5.44f, 1.27f), new(5.44f, 2.13f), 3, 37, 2.55f),
+        (new(5.53f, 3.53f), new(4.65f, 3.53f), 2, 33, 2.55f)
+    ];
 
     public override void _Process(double delta)
     {
         if (!ReducedMotion && !Paused)
             clock += (float)delta;
         benchFlash = Math.Max(0, benchFlash - (float)delta);
+        if (Room == Room.Workshop && !Paused)
+            UpdateWorker((float)delta);
         if (Room == Room.Shop)
         {
             foreach (Customer person in State.Customers)
@@ -228,22 +242,78 @@ public partial class StreetView : Control
         for (int i = 0; i < 9; i++)
             Ground(1.45f + i * .41f, 2.41f, 1.61f + i * .41f, 3.93f, "b6b29254");
 
-        Sprite("Cabinet", .59f, 1.44f);
-        Sprite("Cabinet", 5.49f, .59f);
-        for (int i = 0; i < 3; i++)
-            Crate(.48f + i * .68f, .5f, .56f, i == 1 ? "a7855f" : "bb8b5d");
-        Sprite("PlantTall", 6.36f, .59f, 1.5f);
-        Figure(3.08f, 1.94f, 7, 1, 0);
-        Bench(2.16f, 2.69f);
-        Sprite("Cabinet", 6.03f, 2.94f);
-        Box(.64f, 3.7f, .54f, .58f, 15, 27, "e0b674");
-        Crate(.31f, 3.59f, .76f, "ab7750");
-        Crate(.84f, 4.48f, .63f, "bc9060");
-        Crate(4.51f, 4.8f, .62f, "ae7d54");
-        Crate(5.27f, 4.6f, .68f, "b08457");
-        Crate(5.79f, 4.93f, .58f, "af8459");
-        Sprite("Plant", .68f, 5.28f, 1.5f);
+        List<(float Depth, Action Paint)> furnishings =
+        [
+            (2, () => Sprite("Cabinet", .59f, 1.44f)),
+            (2.2f, () => Crate(1.63f, .42f, .47f, "bb8b5d")),
+            (7, () => Sprite("PlantTall", 6.36f, .59f, 1.5f)),
+            (6.6f, () => Crate(1.04f, 5.05f, .62f, "ac7852")),
+            (10, () => Crate(4.72f, 4.95f, .62f, "ae7d54")),
+            (10.8f, () => Crate(5.44f, 4.95f, .68f, "b08457")),
+            (6, () => Sprite("Plant", .61f, 5.38f, 1.5f))
+        ];
+        foreach (Station station in Enum.GetValues<Station>())
+        {
+            Vector2 point = WorkshopStations[(int)station].Machine;
+            furnishings.Add((point.X + point.Y, () => DrawStation(station)));
+        }
+        furnishings.Add((workerPosition.X + workerPosition.Y, DrawWorker));
+        DrawProps(furnishings);
+        DrawToolBubble();
         Tree(-1.11f, 7.45f, .84f);
+    }
+
+    private void UpdateWorker(float elapsed)
+    {
+        if (State.ActiveStation is Station next && next != workerStation)
+        {
+            workerStation = next;
+            Vector2 destination = WorkshopStations[(int)next].Operator;
+            workerPath.Clear();
+            workerPath.Enqueue(new Vector2(workerPosition.X, 2.57f));
+            workerPath.Enqueue(new Vector2(destination.X, 2.57f));
+            workerPath.Enqueue(destination);
+        }
+
+        if (!workerPath.TryPeek(out Vector2 waypoint))
+            return;
+        Vector2 direction = waypoint - workerPosition;
+        workerPosition = workerPosition.MoveToward(waypoint, elapsed * 6.3f);
+        if (direction.LengthSquared() > .006f)
+            workerFacing = Math.Abs(direction.X) > Math.Abs(direction.Y)
+                ? (direction.X > 0 ? 2 : 0) : (direction.Y > 0 ? 1 : 3);
+        if (workerPosition.DistanceSquaredTo(waypoint) < .001f)
+            workerPath.Dequeue();
+    }
+
+    private void DrawWorker()
+    {
+        bool walking = workerPath.Count > 0;
+        bool working = !walking && State.ActiveStation.HasValue && benchFlash > 0;
+        int frame = walking && !ReducedMotion ? 1 + (int)(clock * 15) % 7 : 0;
+        if (working && !ReducedMotion)
+            frame = 1 + Math.Clamp((int)((1 - benchFlash / .38f) * 7), 0, 6);
+        Figure(workerPosition.X, workerPosition.Y, 7,
+            walking ? workerFacing : WorkshopStations[(int)workerStation].Facing, frame, working ? "MechanicWork" : null);
+    }
+
+    private void DrawToolBubble()
+    {
+        if (!ShowToolPrompt || State.Prompt is not Tool prompt || State.Orders.FirstOrDefault() is not Order order)
+            return;
+
+        Vector2 station = WorkshopStations[(int)Catalog.Toys[order.Toy].Station].Machine;
+        Vector2 at = P(station.X, station.Y, 95) + new Vector2(24, 0);
+        DrawCircle(at + new Vector2(0, 3), 35, ToyArt.C("304a4180"), antialiased: true);
+        DrawCircle(at, 35, ToyArt.C("4a6254"), antialiased: true);
+        DrawCircle(at, 32, ToyArt.C("fff0c9"), antialiased: true);
+        DrawCircle(at + new Vector2(-16, 34), 5, ToyArt.C("f8e6b4"), antialiased: true);
+        DrawTextureRectRegion(Texture(prompt.ToString()), new Rect2(at + new Vector2(-31, -23), new Vector2(56, 42)),
+            new Rect2(19, 15, 154, 112));
+        GameIcons.Arrow(this, prompt, at + new Vector2(17, 4), 16, ToyArt.C("365a50"));
+        float fraction = (float)Math.Clamp(1 - order.Work / State.ToolWindow(order.Toy), 0, 1);
+        DrawRect(new Rect2(at.X - 19, at.Y + 21, 38, 3), ToyArt.C("b8ac87"));
+        DrawRect(new Rect2(at.X - 19, at.Y + 21, 38 * fraction, 3), ToyArt.C("486f61"));
     }
 
     private void Town()
@@ -394,19 +464,29 @@ public partial class StreetView : Control
             ToyArt.Draw(this, display.Toy, P(x + .24f + i % 3 * .24f, y + .38f + i / 3 * .25f, surface), scale * .83f);
 
         Vector2 p = P(x + .5f, y + .5f);
+        if (display.Toy >= 0)
+            GameIcons.Family(this, Catalog.Toys[display.Toy].Family, P(x + .77f, y + .8f, 21), 8);
         float halfWidth = display.Style == Fixture.Plant ? 19 : 37;
         float height = display.Style == Fixture.Plant ? 35 : 53;
         hits.Add((new Rect2(p.X - halfWidth * scale, p.Y - height * scale, halfWidth * 2 * scale, (height + 13) * scale), display));
     }
 
-    private void Bench(float x, float y)
+    private void DrawStation(Station station)
     {
-        Sprite("Bench", x + 1.08f, y + .49f, 3.4f);
-        int toy = State.Orders.Count > 0 ? State.Orders[0].Toy : 1;
-        ToyArt.Draw(this, toy, P(x + 1.18f, y + .45f, 39), scale * 1.21f);
+        var table = WorkshopStations[(int)station];
+        Vector2 spot = table.Machine;
+        bool active = State.ActiveStation == station;
+        if (active)
+            Ground(spot.X - .39f, spot.Y - .7f, spot.X + .4f, spot.Y + .8f, "f3ce775e");
+        Sprite(station.ToString(), spot.X, spot.Y, table.Span);
+        if (!active)
+            return;
+
+        int toy = State.Orders[0].Toy;
+        ToyArt.Draw(this, toy, P(spot.X + .19f, spot.Y + .24f, table.Height), scale * 1.17f);
         if (benchFlash > 0 && !ReducedMotion)
         {
-            Vector2 glint = P(x + 1.18f, y + .46f, 52);
+            Vector2 glint = P(spot.X + .25f, spot.Y + .29f, table.Height + 13);
             float progress = 1 - benchFlash / .38f;
             Color color = ToyArt.C(cutCleanly ? "ffdf92" : "c76957");
             color.A = 1 - progress;
@@ -566,21 +646,25 @@ public partial class StreetView : Control
             Pixel(x, y, 10, 10, customer.Result == 1 ? "b68659" : "e6c089");
             Pixel(x + 7 * scale, y, 3, 10, "a77956");
         }
-        if (customer == Reading)
+        if (customer == Reading || (customer.Phase == VisitPhase.Browse && !customer.Walking))
         {
-            Pixel(p.X - 13 * scale, p.Y - 84 * scale, 26, 25, "47594c");
-            Pixel(p.X - 12 * scale, p.Y - 83 * scale, 24, 23, "f3d9a3");
-            ToyArt.Draw(this, customer.Wanted, p - new Vector2(0, 62 * scale), scale * .89f);
+            Vector2 mark = p - new Vector2(0, 73 * scale);
+            GameIcons.Family(this, customer.Family, mark, 13 * scale);
+            if (customer.WantsExact)
+            {
+                DrawCircle(mark + new Vector2(17, 2), 11, ToyArt.C("f5e2b5"), antialiased: true);
+                ToyArt.Draw(this, customer.Wanted, mark + new Vector2(17, 10), .68f);
+            }
         }
         hits.Add((new Rect2(p.X - 17 * scale, p.Y - 57 * scale, 34 * scale, 60 * scale), customer));
     }
 
-    private void Figure(float x, float y, int style, int direction, int frame)
+    private void Figure(float x, float y, int style, int direction, int frame, string? actionSprite = null)
     {
         Ground(x - .16f, y - .13f, x + .21f, y + .21f, "4c413c4a");
         float size = 123 * scale;
         Vector2 p = P(x, y);
-        DrawTextureRectRegion(Texture($"Person{style}"),
+        DrawTextureRectRegion(Texture(actionSprite ?? $"Person{style}"),
             new Rect2(p - new Vector2(size * .5f, size * .71f), new Vector2(size, size)),
             new Rect2(frame * 112, direction * 112, 112, 112));
     }

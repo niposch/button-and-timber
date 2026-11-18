@@ -18,6 +18,8 @@ internal sealed record BasketItem(int Toy, int Price);
 
 internal sealed partial class Customer
 {
+    public bool WantsExact { get; set; }
+    [JsonIgnore] public ToyFamily Family => Catalog.Toys[Wanted].Family;
     public Cell Position { get; set; }
     public Cell Target { get; set; }
     public Cell? DisplayCell { get; set; }
@@ -33,7 +35,7 @@ internal sealed partial class Customer
 
 internal sealed partial class ShopState
 {
-    public const int CurrentSchema = 1;
+    public const int CurrentSchema = 2;
     public int[] Furniture { get; set; } = [2, 1, 1, 0];
     public double ShopRemainder { get; set; }
     public int LastTicket { get; set; }
@@ -42,9 +44,21 @@ internal sealed partial class ShopState
     [JsonIgnore] public Cell Entry => new(Width - 1, 6);
     [JsonIgnore] public Customer? ReadyToPay => Customers.FirstOrDefault(person => person.Phase == VisitPhase.Checkout &&
         !person.Walking && person.Position == CheckoutSpot && QueuePosition(person) == 0);
-    [JsonIgnore] public int FeaturedToy => Enumerable.Range(0, Catalog.Toys.Length)
-        .Where(toy => Unlocked[toy] && Catalog.Toys[toy].Season == Season)
-        .DefaultIfEmpty(Season == 2 ? 1 : 0).Max();
+    public int Forecast(ToyFamily family)
+    {
+        ToyFamily favourite = Catalog.SeasonalDemand[(Season + (Date - 1) / 3) % Catalog.Families.Length];
+        ToyFamily second = Catalog.SeasonalDemand[(Season + (Date - 1) / 2 + 1) % Catalog.Families.Length];
+        return family == favourite ? (Fair ? 4 : 3) : family == second ? 2 : 1;
+    }
+
+    public int Shortages(Till report, ToyFamily family) => Catalog.Toys.Select((toy, index) => (toy, index))
+        .Where(entry => entry.toy.Family == family).Sum(entry => report.Requests[entry.index]);
+
+    public bool StocksFamily(ToyFamily family) => Displays.Any(display =>
+        display.Toy >= 0 && display.Count > 0 && Catalog.Toys[display.Toy].Family == family);
+
+    public static bool Matches(Customer person, int toy) => person.Wanted == toy ||
+        (!person.WantsExact && Catalog.Toys[toy].Family == person.Family);
 
     public event Action<int>? CheckedOut;
 
@@ -63,30 +77,69 @@ internal sealed partial class ShopState
         if (Schema >= CurrentSchema)
             return;
 
-        if (Displays.Count > 0 || Shift == Shift.Open)
+        if (Unlocked.Length < Catalog.Toys.Length || Stock.Length < Catalog.Toys.Length ||
+            Prices.Length < Catalog.Toys.Length || Practice.Length < Catalog.Toys.Length || !Unlocked[Catalog.PebbleDice])
         {
-            if (Register == null)
-                Displays.Add(new Display { X = Width - 2, Y = 1, Style = Fixture.Register });
-            foreach (Fixture kind in Enum.GetValues<Fixture>())
-                Furniture[(int)kind] = Math.Max(0, Furniture[(int)kind] - Displays.Count(display => display.Style == kind));
+            int count = Catalog.Toys.Length;
+            int[] stock = Stock;
+            int[] experience = Practice;
+            int[] prices = Prices;
+            bool[] unlocked = Unlocked;
+            int firstNew = prices.Length;
+            Array.Resize(ref stock, count);
+            Array.Resize(ref experience, count);
+            Array.Resize(ref prices, count);
+            Array.Resize(ref unlocked, count);
+            for (int i = firstNew; i < count; i++)
+                prices[i] = Catalog.Toys[i].Value;
+
+            Stock = stock;
+            Practice = experience;
+            Prices = prices;
+            Unlocked = unlocked;
+            Stock[Catalog.PebbleDice] += 5;
+            Unlocked[Catalog.PebbleDice] = true;
         }
 
-        Customers.RemoveAll(person => person.Result != 0);
-        Today.CustomersServed = Today.Sold;
+        for (int i = 0; i < Practice.Length; i++)
+            Practice[i] *= 2;
+        ResizeRequests(Today);
+        ResizeRequests(Yesterday);
         foreach (Order order in Orders)
         {
-            int steps = StepCount(order.Toy);
-            double scaled = Math.Clamp(order.Work / Catalog.Toys[order.Toy].Time * steps, 0, steps - .01);
-            order.Step = (int)scaled;
-            order.Work = (scaled - order.Step) * ToolWindow(order.Toy);
+            PrepareUnit(order);
+            order.Step = Math.Min(order.Step, order.Plan.Length - 1);
+            order.Work = Math.Clamp(order.Work, 0, ToolWindow(order.Toy) - .02);
         }
-        foreach (Customer person in Customers)
+
+        if (Schema == 0)
         {
-            person.Position = Entry;
-            BrowseNext(person);
+            if (Displays.Count > 0 || Shift == Shift.Open)
+            {
+                if (Register == null)
+                    Displays.Add(new Display { X = Width - 2, Y = 1, Style = Fixture.Register });
+                foreach (Fixture kind in Enum.GetValues<Fixture>())
+                    Furniture[(int)kind] = Math.Max(0, Furniture[(int)kind] - Displays.Count(display => display.Style == kind));
+            }
+
+            Customers.RemoveAll(person => person.Result != 0);
+            Today.CustomersServed = Today.Sold;
+            foreach (Customer person in Customers)
+            {
+                person.Position = Entry;
+                BrowseNext(person);
+            }
         }
+
         Schema = CurrentSchema;
         Replenish();
+
+        static void ResizeRequests(Till report)
+        {
+            int[] requests = report.Requests;
+            Array.Resize(ref requests, Catalog.Toys.Length);
+            report.Requests = requests;
+        }
     }
 
     public bool CanPlace(Cell tile, Display? moving = null)
@@ -144,12 +197,12 @@ internal sealed partial class ShopState
     {
         int[] toys = Season switch
         {
-            0 => [0, 4], 1 => [2, 6], 2 => [1, 8], _ => [3, 9]
+            0 => [0, Catalog.TrainYard], 1 => [2, 7], 2 => [1, 9], _ => [3, 8]
         };
         int toy = toys[index];
-        int count = 3 + index;
-        return (index == 0 ? "Library playgroup" : "Window commission", toy, count,
-            Catalog.Toys[toy].Value * count + (index == 0 ? 18 : 45));
+        int count = index == 0 ? 3 : 2;
+        return (index == 0 ? "Library playgroup" : "Showcase order", toy, count,
+            Catalog.Toys[toy].Value * count + (index == 0 ? 18 : 50));
     }
 
     public bool CanDeliverExtra(int index)
@@ -259,20 +312,27 @@ internal sealed partial class ShopState
 
     private void Visit()
     {
-        List<int> weights = [];
-        for (int toy = 0; toy < Catalog.Toys.Length; toy++)
+        ToyFamily family = Catalog.Families[0];
+        int roll = Roll(Catalog.Families.Sum(category => 4 + Forecast(category) * 3));
+        foreach (ToyFamily category in Catalog.Families)
         {
-            int weight = Unlocked[toy] ? 5 : Day < 3 ? 0 : 1;
-            if (toy == FeaturedToy)
-                weight += Fair ? 8 : 4;
-            for (int i = 0; i < weight; i++)
-                weights.Add(toy);
+            roll -= 4 + Forecast(category) * 3;
+            if (roll >= 0)
+                continue;
+            family = category;
+            break;
         }
 
-        int wanted = weights[Roll(weights.Count)];
+        int patron = Roll(100);
+        int tier = patron < (Fair ? 29 : 21) ? 3 : patron < 58 ? 2 : 1;
+        int[] candidates = Enumerable.Range(0, Catalog.Toys.Length)
+            .Where(toy => Unlocked[toy] && Catalog.Toys[toy].Family == family && Catalog.Toys[toy].Tier <= tier)
+            .OrderByDescending(toy => Catalog.Toys[toy].Tier).ToArray();
+        int wanted = candidates[tier == 1 || Roll(100) < 65 ? 0 : Roll(candidates.Length)];
+        bool exact = candidates.Length > 1 && Roll(100) < (Fair ? 24 : 14);
         int value = Catalog.Toys[wanted].Value;
-        Customer person = new() { Appearance = Roll(48), Wanted = wanted,
-            Budget = value + 5 + Roll(16 + value / 2), Position = Entry };
+        Customer person = new() { Appearance = Roll(48), Wanted = wanted, WantsExact = exact,
+            Budget = value + 5 + Roll(17 + value / 2), Position = Entry };
         Customers.Add(person);
         Today.Visitors++;
         BrowseNext(person);
@@ -281,8 +341,10 @@ internal sealed partial class ShopState
     private void BrowseNext(Customer person)
     {
         var paths = Paths(person.Position);
+        int left = person.Budget - person.Basket.Sum(item => item.Price);
         Cell[] shelves = Displays.Where(display => display.Capacity > 0 && !person.Seen.Contains(At(display)))
-            .OrderByDescending(display => display.Toy == person.Wanted && display.Count > 0)
+            .OrderByDescending(display => display.Count > 0 && Prices[display.Toy] <= left && Matches(person, display.Toy))
+            .ThenByDescending(display => display.Toy == person.Wanted && display.Count > 0 && Prices[display.Toy] <= left)
             .ThenByDescending(display => display.Count > 0)
             .ThenBy(display => Math.Abs(display.X - person.Position.X) + Math.Abs(display.Y - person.Position.Y))
             .Select(At).ToArray();
@@ -341,7 +403,7 @@ internal sealed partial class ShopState
             {
                 int toy = display.Toy;
                 int price = Prices[toy];
-                bool wanted = toy == person.Wanted;
+                bool wanted = Matches(person, toy);
                 int left = person.Budget - person.Basket.Sum(item => item.Price);
                 if (price <= left && price * 100 <= Catalog.Toys[toy].Value * (wanted ? 145 : 112) &&
                     person.Basket.All(item => item.Toy != toy) && (wanted || Roll(100) < (Fair ? 58 : 42)))
@@ -362,7 +424,7 @@ internal sealed partial class ShopState
 
     private void DoneBrowsing(Customer person)
     {
-        if (person.Basket.All(item => item.Toy != person.Wanted))
+        if (person.Basket.All(item => !Matches(person, item.Toy)))
             Today.Requests[person.Wanted]++;
         if (person.Basket.Count == 0)
         {

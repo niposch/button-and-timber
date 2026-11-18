@@ -7,3 +7,4 @@ obj/
 /builds/
 /NuGet.Config
 *.blend1
+__pycache__/
