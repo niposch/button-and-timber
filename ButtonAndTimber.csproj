@@ -5,4 +5,13 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
+  <PropertyGroup Condition="'$(ButtonAndTimberWeb)' == 'true'">
+    <TargetFramework>net9.0</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <DefineConstants>$(DefineConstants);BUTTON_AND_TIMBER_WEB</DefineConstants>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(ButtonAndTimberWeb)' == 'true'">
+    <TrimmerRootAssembly Include="System.Private.CoreLib" />
+    <TrimmerRootAssembly Include="System.Runtime" />
+  </ItemGroup>
 </Project>

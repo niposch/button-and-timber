@@ -2,6 +2,8 @@
 
 A small toy-shop sim set on Alder Lane. Make toys in the back room, find out what shoppers came for, and put your earnings toward the shop deed. The campaign runs for four six-day seasons. Save $1,750 by the end of winter to earn the deed, or keep trading in free play.
 
+[Play in your browser](https://niposch.de/button-and-timber/)
+
 ## Play
 
 Import `project.godot` in **Godot 4.7.2 .NET** with the **.NET SDK** installed. Press **F5** to build and run the game.
@@ -33,3 +35,13 @@ godot --headless --path . -- --smoke-test
 ```
 
 The smoke test covers the controls, staged batches, cart logistics, storage and rent, seasonal decorations, save migration, checkout, and both campaign outcomes. To capture the shop, workshop, moving cart, and decor picker, run `godot --path . -- --capture=.godot/preview`.
+
+## Browser builds
+
+Run `pwsh -File build-web.ps1 -Setup` on Windows to install the pinned [Godot .NET web exporter](https://github.com/ComplexRobot/godot-dotnet-web-export/releases/tag/4.7.2), .NET SDK, and WebAssembly workload, and export to `builds/web`. Omit `-Setup` for subsequent builds. To test locally, serve the export with `python -m http.server --bind 127.0.0.1 --directory builds/web 8080` and open `http://127.0.0.1:8080/`. Append `?check=1` to run the in-browser smoke test and read its result in the browser console.
+
+Pushes to `main` build and deploy the browser version with GitHub Actions. The Pages site inherits its domain from `niposch.de`. A service worker scoped to the game supplies the cross-origin isolation required by the threaded exporter.
+
+## License
+
+Original code and assets are licensed under [MIT](LICENSE). Third-party assets keep their original licenses. See [third-party notices](THIRD_PARTY.md) for attribution and runtime notices.

@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>$GODOT_PROJECT_NAME</title>
+  <style>
+    html, body { margin: 0; overflow: hidden; background: #233330; color: #f9ecd0; }
+    canvas { display: block; outline: none; touch-action: none; }
+    #loading { position: fixed; inset: 0; display: grid; place-content: center; gap: 1rem; padding: 1.5rem; text-align: center; font: 16px system-ui, sans-serif; }
+    h1 { margin: 0; font: bold 2rem Georgia, serif; }
+    progress { width: min(25rem, 80vw); justify-self: center; accent-color: #e6be7f; }
+    [hidden] { display: none !important; }
+  </style>
+  $GODOT_HEAD_INCLUDE
+</head>
+<body>
+  <canvas id="canvas" tabindex="0" aria-label="Button &amp; Timber game"></canvas>
+  <div id="loading" role="status">
+    <h1>Button &amp; Timber</h1>
+    <div id="status">Opening the shop…</div>
+    <progress id="progress" aria-label="Game download"></progress>
+    <noscript>Enable JavaScript to play.</noscript>
+  </div>
+  <script src="$GODOT_URL"></script>
+  <script>
+    const config = $GODOT_CONFIG;
+    const loading = document.getElementById('loading');
+    const progress = document.getElementById('progress');
+    const launchUrl = new URL(location.href);
+
+    async function start() {
+      if (!crossOriginIsolated) {
+        if (!navigator.serviceWorker || launchUrl.searchParams.has('_isolation')) {
+          throw new Error('Use a current desktop browser with service workers and shared memory enabled.');
+        }
+        await navigator.serviceWorker.register('./isolation.js');
+        await navigator.serviceWorker.ready;
+        launchUrl.searchParams.set('_isolation', '1');
+        location.replace(launchUrl);
+        return;
+      }
+
+      launchUrl.searchParams.delete('_isolation');
+      history.replaceState(null, '', launchUrl);
+      if (launchUrl.searchParams.has('check')) config.args = ['--', '--smoke-test'];
+      if (Engine.getMissingFeatures({ threads: true }).length) {
+        throw new Error('This game needs WebGL 2 and WebAssembly shared memory.');
+      }
+      const engine = new Engine(config);
+      await engine.startGame({
+        onProgress(current, total) {
+          if (!total) return;
+          progress.max = total;
+          progress.value = current;
+        }
+      });
+      loading.hidden = true;
+    }
+
+    start().catch(error => {
+      console.error(error);
+      progress.hidden = true;
+      document.getElementById('status').textContent = error.message || String(error);
+    });
+  </script>
+</body>
+</html>
