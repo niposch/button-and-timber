@@ -326,7 +326,7 @@ public partial class ShopGame : Control
 
         Rectangle(this, 16, 695, 877, 90, "476157");
         Rectangle(this, 18, 697, 873, 86, "31483f");
-        Put(this, "Today’s demand", 32, 710, 160, 31, 18, Light, true);
+        Put(this, "Today’s demand", 32, 710, 160, 31, 16, Light, true);
         foreach (ToyFamily family in Catalog.Families)
         {
             ToyFamily target = family;
