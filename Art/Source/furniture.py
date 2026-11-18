@@ -64,21 +64,28 @@ def display(table=False):
     box("Paper ticket", .439, 0, height, .012, .172, .056, CREAM, .002)
 
 
+REGISTER_HEIGHT = .8
+
+
+def zbox(name, x, y, z, sx, sy, sz, mat, bevel=.025):
+    return box(name, x, y, z * REGISTER_HEIGHT, sx, sy, sz * REGISTER_HEIGHT, mat, bevel)
+
+
 def register():
-    box("Kickboard", 0, 0, .08, .73, .86, .16, TEAL)
-    box("Counter body", 0, 0, .365, .73, .87, .62, GREEN)
-    box("Maple top", 0, 0, .69, .86, .96, .085, WOOD)
+    zbox("Kickboard", 0, 0, .08, .73, .86, .16, TEAL)
+    zbox("Counter body", 0, 0, .365, .73, .87, .62, GREEN)
+    zbox("Maple top", 0, 0, .69, .86, .96, .085, WOOD)
     for y in (-.265, -.13, .005, .14, .275):
-        box("Fluting", .372, y, .32, .035, .045, .49, CREAM, .008)
-    box("Till drawer", -.015, .15, .776, .40, .43, .09, TEAL)
-    box("Till keypad", -.015, .15, .839, .32, .33, .05, IRON)
+        zbox("Fluting", .372, y, .32, .035, .045, .49, CREAM, .008)
+    zbox("Till drawer", -.015, .15, .776, .40, .43, .09, TEAL)
+    zbox("Till keypad", -.015, .15, .839, .32, .33, .05, IRON)
     for x in (-.09, 0, .09):
         for y in (.075, .16, .245):
-            box("Till key", x, y, .876, .037, .037, .02, CREAM, .007)
-    box("Display bezel", -.175, .15, .894, .075, .34, .15, TEAL)
-    box("Display glass", -.134, .15, .908, .015, .248, .075, GOLD, .007)
-    box("Coin dish", .075, -.228, .755, .19, .26, .043, RED)
-    box("Dish liner", .075, -.228, .78, .14, .21, .009, CREAM, .003)
+            zbox("Till key", x, y, .876, .037, .037, .02, CREAM, .007)
+    zbox("Display bezel", -.175, .15, .894, .075, .34, .15, TEAL)
+    zbox("Display glass", -.134, .15, .908, .015, .248, .075, GOLD, .007)
+    zbox("Coin dish", .075, -.228, .755, .19, .26, .043, RED)
+    zbox("Dish liner", .075, -.228, .78, .14, .21, .009, CREAM, .003)
 
 
 def workbench():
