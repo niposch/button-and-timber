@@ -100,10 +100,9 @@ public partial class ShopGame
             bool shelf = state.Displays.Any(display => display.Capacity > 0);
             bool stocked = state.Displays.Any(display => display.Count > 0);
             Line("Opening your first day", 17, Ink, true);
-            Paragraph($"{(register ? "✓" : "○")} Place a register    {(shelf ? "✓" : "○")} Place a shelf
-" +
-                $"{(stocked ? "✓" : "○")} Stock it with a toy    ○ Open the shop and ring up your first sale
-" +
+            Paragraph($"{(register ? "✓" : "○")} Place a register
+{(shelf ? "✓" : "○")} Place a shelf\n" +
+                $"{(stocked ? "✓" : "○")} Stock it with a toy    ○ Open the shop and ring up your first sale\n" +
                 "Make more toys in the Workshop. Match what shoppers ask for to what's on your shelves.");
             Divider();
         }

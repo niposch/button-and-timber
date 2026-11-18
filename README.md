@@ -14,6 +14,9 @@ Import `project.godot` in **Godot 4.7.2 .NET** with the **.NET SDK** installed. 
 - **Blueprints** · 22 toys span four tiers. Each blueprint has its own levels, costs, and yield. Follow the Pip Engine through the Signal Cabin and Train Yard to reach the Midnight Express.
 - **Stockroom** · The top bar shows used and total space. Open it to rent more space or select a toy and discard a quantity from reserve. Batches waiting for space resume once there is room. Bigger stockrooms raise the rent charged at closing.
 - **Orders** · Fill seasonal and showcase requests or upgrade cart capacity.
+- **Standing** · Earn renown to climb from Stallholder to Royal toymaker, which opens higher-tier patterns, staff, and the largest stockroom. From Craftsman, choose a shop style (Heirloom, Volume, or Showman). Hire an apprentice, window dresser, or cashier. Happy shoppers become regulars who return, bring friends' budgets, and tip.
+- **Shoppers and prices** · Parents, bargain hunters, tourists, gift buyers, and collectors each haggle differently. Cheap shelves draw crowds, greedy ones cost reputation.
+- **Days** · Random events such as school trips, rival shops, supplier sales, collector visits, and rain shape each morning. Every year sets a bigger profit target than the last.
 - **Till report** · Check sales, expenses, and unmet requests. The doors close at 6 PM after the last shopper finishes. The speed controls advance the shop and unattended bench. Tool prompts keep their real-time duration while you work them.
 
 Press **1**, **2**, and **3** to switch rooms. Press **Space** for the current shop action, such as opening the shop, ringing up a ready customer, or starting the next day. The daybook autosaves during play and when you close the game. **Options** has a manual save and a confirmed restart. Existing daybooks resume with their furnishings and progress. Use **New campaign** to try building from an empty shop.
