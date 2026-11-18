@@ -257,7 +257,7 @@ public partial class StreetView : Control
         {
             if (back != (person.Position.Y < 0))
                 continue;
-            float x = person.Position.X + .5f + person.Direction * (float)(person.Travel + State.ShopRemainder * person.Pace);
+            float x = person.Position.X + .5f + person.Direction * (float)(person.Travel + (State.ShopRemainder + State.VisualLead) * person.Pace);
             float y = person.Position.Y + .5f;
             people.Add((x + y, () => Figure(x, y, person.Appearance % 6, person.Direction > 0 ? 2 : 0,
                 WalkFrame(person.Appearance))));
@@ -776,11 +776,21 @@ public partial class StreetView : Control
         Vector2 point = new(customer.Position.X + .5f, customer.Position.Y + .5f);
         if (!customer.Walking)
             return point;
-        Cell next = customer.Route[0];
         double pace = customer.Phase is VisitPhase.Approach or VisitPhase.Depart
             ? (customer.StreetPace > 0 ? customer.StreetPace : .17) : .36;
-        float travel = (float)Math.Min(1, customer.Travel + State.ShopRemainder * pace);
-        return point.Lerp(new Vector2(next.X + .5f, next.Y + .5f), travel);
+        float travel = (float)(customer.Travel + (State.ShopRemainder + State.VisualLead) * pace);
+        for (int index = 0; index < customer.Route.Count; index++)
+        {
+            Vector2 next = new(customer.Route[index].X + .5f, customer.Route[index].Y + .5f);
+            if (travel >= 1 && index + 1 < customer.Route.Count)
+            {
+                point = next;
+                travel -= 1;
+                continue;
+            }
+            return point.Lerp(next, Math.Min(1, travel));
+        }
+        return point;
     }
 
     private int WalkFrame(int appearance) => ReducedMotion ? 0 : 1 + (int)((State.StreetClock * 1.16 + appearance * 2.7) % 7);

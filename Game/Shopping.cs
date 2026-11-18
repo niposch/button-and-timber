@@ -38,6 +38,9 @@ internal sealed partial class ShopState
     public const int CurrentSchema = 4;
     public int[] Furniture { get; set; } = [2, 1, 1, 0, 0, 0, 0, 0];
     public double ShopRemainder { get; set; }
+
+    /// <summary>Minutes elapsed since the last simulation step, used only to draw smooth motion between steps.</summary>
+    [JsonIgnore] public double VisualLead { get; set; }
     public int LastTicket { get; set; }
     public int[] SideOrders { get; set; } = new int[4];
     [JsonIgnore] public Display? Register => Displays.Find(display => display.Style == Fixture.Register);

@@ -107,6 +107,7 @@ public partial class ShopGame : Control
     public override void _Process(double delta)
     {
         stepClock += delta;
+        state.VisualLead = speed > 0 ? Math.Min(stepClock, .25) * 5.5 * speed : 0;
         benchFeedbackLeft = Math.Max(0, benchFeedbackLeft - delta);
         if (toastLeft > 0)
         {
@@ -119,6 +120,7 @@ public partial class ShopGame : Control
 
         double elapsed = Math.Min(stepClock, .25);
         stepClock = 0;
+        state.VisualLead = 0;
         Shift before = state.Shift;
         int visitorsBefore = state.Today.Visitors;
         int ordersBefore = state.Orders.Count;

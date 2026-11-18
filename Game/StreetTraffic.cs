@@ -25,7 +25,7 @@ internal sealed partial class ShopState
     public List<Pedestrian> Pedestrians { get; set; } = [];
     public long StreetMinutes { get; set; }
 
-    [JsonIgnore] public double StreetClock => StreetMinutes + ShopRemainder;
+    [JsonIgnore] public double StreetClock => StreetMinutes + ShopRemainder + VisualLead;
     [JsonIgnore] public int ClockTime => Shift switch
     {
         Shift.Setup => 8 * 60, Shift.Closed => 9 * 60 + ShopHours, _ => 9 * 60 + (int)Minute
