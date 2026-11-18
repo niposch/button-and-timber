@@ -2,12 +2,12 @@ namespace ButtonAndTimber;
 
 internal enum Room { Shop, Workshop, Town }
 internal enum Shift { Setup, Open, Closed }
-internal enum Fixture { Display, Table, Register, Plant }
+internal enum Fixture { Display, Table, Register, Plant, FlowerCrate, PennantStand, PumpkinCrate, SnowLantern }
 internal enum ToyFamily { Trains, Plush, Motion, Games }
 internal enum Station { Bench, Sewing, Assembly, Finishing }
 
 internal sealed record Toy(string Name, ToyFamily Family, Station Station, int Materials, int Value,
-    int Tier, int BaseYield, int Research, int Prerequisite, int RequiredLevel);
+    int Tier, int BaseYield, int Research, int Prerequisite, int RequiredLevel, params Station[] FollowUp);
 
 internal static class Catalog
 {
@@ -17,23 +17,32 @@ internal static class Catalog
     public const int TrainYard = 11;
     public const int FreightFleet = 12;
     public const int PebbleDice = 13;
+    public const int MidnightExpress = 14;
 
     public static readonly Toy[] Toys =
     [
         new("Pocket Bear", ToyFamily.Plush, Station.Sewing, 5, 15, 1, 94, 0, -1, 0),
         new("Pip Engine", ToyFamily.Trains, Station.Bench, 7, 21, 1, 93, 0, -1, 0),
         new("Whirligig", ToyFamily.Motion, Station.Finishing, 3, 10, 1, 97, 0, -1, 0),
-        new("Tin Comet", ToyFamily.Motion, Station.Assembly, 11, 32, 2, 81, 32, Whirligig, 2),
+        new("Tin Comet", ToyFamily.Motion, Station.Assembly, 11, 32, 2, 81, 32, Whirligig, 2, Station.Finishing),
         new("Dapple Hare", ToyFamily.Plush, Station.Sewing, 8, 24, 2, 86, 26, 0, 2),
-        new("Orchard Checkers", ToyFamily.Games, Station.Finishing, 10, 30, 2, 83, 34, PebbleDice, 2),
+        new("Orchard Checkers", ToyFamily.Games, Station.Bench, 10, 30, 2, 83, 34, PebbleDice, 2, Station.Finishing),
         new("Sailcloth Sloop", ToyFamily.Motion, Station.Bench, 13, 38, 2, 77, 49, Whirligig, 3),
-        new("Wind-up Finch", ToyFamily.Motion, Station.Assembly, 17, 55, 3, 68, 65, 3, 3),
-        new("Patchwork Pony", ToyFamily.Plush, Station.Sewing, 15, 47, 3, 71, 58, 4, 3),
-        new("Moonlight Theatre", ToyFamily.Games, Station.Assembly, 24, 72, 3, 63, 85, 5, 3),
-        new("Signal Cabin", ToyFamily.Trains, Station.Bench, 12, 37, 2, 82, 34, Engine, 2),
-        new("Alder Train Yard", ToyFamily.Trains, Station.Assembly, 24, 79, 3, 60, 85, SignalCabin, 3),
-        new("Freight Fleet", ToyFamily.Trains, Station.Bench, 15, 44, 2, 76, 48, Engine, 3),
-        new("Pebble Dice", ToyFamily.Games, Station.Finishing, 4, 13, 1, 96, 0, -1, 0)
+        new("Wind-up Finch", ToyFamily.Motion, Station.Assembly, 17, 55, 3, 68, 65, 3, 3, Station.Finishing),
+        new("Patchwork Pony", ToyFamily.Plush, Station.Sewing, 15, 47, 3, 71, 58, 4, 3, Station.Finishing),
+        new("Moonlight Theatre", ToyFamily.Games, Station.Bench, 24, 72, 3, 63, 85, 5, 3, Station.Assembly, Station.Finishing),
+        new("Signal Cabin", ToyFamily.Trains, Station.Bench, 12, 37, 2, 82, 34, Engine, 2, Station.Finishing),
+        new("Alder Train Yard", ToyFamily.Trains, Station.Bench, 24, 79, 3, 60, 85, SignalCabin, 3, Station.Assembly, Station.Finishing),
+        new("Freight Fleet", ToyFamily.Trains, Station.Bench, 15, 44, 2, 76, 48, Engine, 3, Station.Assembly),
+        new("Pebble Dice", ToyFamily.Games, Station.Finishing, 4, 13, 1, 96, 0, -1, 0),
+        new("Midnight Express", ToyFamily.Trains, Station.Bench, 36, 128, 4, 54, 135, TrainYard, 4, Station.Assembly, Station.Finishing),
+        new("Picnic Coach", ToyFamily.Trains, Station.Bench, 22, 66, 3, 72, 74, FreightFleet, 3, Station.Finishing),
+        new("Button Kitten", ToyFamily.Plush, Station.Sewing, 10, 30, 2, 86, 34, 0, 3),
+        new("Starling Teddy", ToyFamily.Plush, Station.Sewing, 31, 105, 4, 58, 110, 8, 4, Station.Assembly, Station.Finishing),
+        new("Paper Glider", ToyFamily.Motion, Station.Finishing, 15, 50, 3, 77, 61, 6, 3, Station.Assembly),
+        new("Starlight Carousel", ToyFamily.Motion, Station.Bench, 34, 122, 4, 55, 136, 7, 4, Station.Assembly, Station.Finishing),
+        new("Marble Maze", ToyFamily.Games, Station.Bench, 18, 62, 3, 73, 67, 5, 3, Station.Assembly),
+        new("Carnival Arcade", ToyFamily.Games, Station.Bench, 34, 121, 4, 56, 132, 20, 4, Station.Assembly, Station.Finishing)
     ];
 
     public static readonly ToyFamily[] Families = Enum.GetValues<ToyFamily>();
@@ -57,7 +66,13 @@ internal sealed class Display
 internal sealed class Order
 {
     public int Toy { get; set; }
+    public Fixture? Decoration { get; set; }
     public int Remaining { get; set; }
+    public int Quantity { get; set; }
+    public int Stage { get; set; }
+    public int StageLeft { get; set; }
+    public double Transfer { get; set; }
+    public bool SinglePass { get; set; }
     public double Work { get; set; }
     public int Made { get; set; }
     public int Scrapped { get; set; }
@@ -112,7 +127,7 @@ internal sealed partial class ShopState
     public int DeedSavings { get; set; }
     public bool[] Commissions { get; set; } = new bool[4];
     public uint Seed { get; set; } = 0x639dc755;
-    public int[] Stock { get; set; } = [7, 6, 7, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 6];
+    public int[] Stock { get; set; } = NewStock();
     public int[] Prices { get; set; } = Catalog.Toys.Select(toy => toy.Value).ToArray();
     public int[] Practice { get; set; } = new int[Catalog.Toys.Length];
     public bool[] Unlocked { get; set; } = Catalog.Toys.Select(toy => toy.Prerequisite < 0).ToArray();
@@ -122,6 +137,16 @@ internal sealed partial class ShopState
     public Till Today { get; set; } = new();
     public Till Yesterday { get; set; } = new();
     public List<string> Notes { get; set; } = [];
+
+    private static int[] NewStock()
+    {
+        int[] stock = new int[Catalog.Toys.Length];
+        stock[0] = 7;
+        stock[Catalog.Engine] = 6;
+        stock[Catalog.Whirligig] = 7;
+        stock[Catalog.PebbleDice] = 6;
+        return stock;
+    }
 
     public int Season => ((Day - 1) / 6) % 4;
     public int Year => (Day - 1) / CampaignDays + 1;
@@ -169,21 +194,20 @@ internal sealed partial class ShopState
 
     public bool Queue(int toy, int quantity)
     {
-        int cost = ToyCost(toy) * quantity;
-        if (!Unlocked[toy] || quantity is < 1 or > 12 || cost > Cash || Orders.Count >= 4)
+        if (!Unlocked[toy])
             return false;
-
-        Spend(cost);
-        Order order = new() { Toy = toy, Remaining = quantity };
-        PrepareUnit(order);
-        Orders.Add(order);
-        return true;
+        return QueueProject(new Order { Toy = toy }, quantity, ToyCost(toy));
     }
 
-    public void Assign(Display display, int toy)
+    public bool Assign(Display display, int toy)
     {
-        if (display.Capacity == 0 || display.Toy == toy || (toy >= 0 && !Unlocked[toy]))
-            return;
+        if (display.Capacity == 0 || (toy >= 0 && !Unlocked[toy]))
+            return false;
+        if (display.Toy == toy)
+            return true;
+        int incoming = toy < 0 ? 0 : Math.Min(display.Capacity, Stock[toy]);
+        if (StorageUsed + display.Count - incoming > StorageCapacity && display.Count > incoming)
+            return false;
 
         if (display.Toy >= 0)
             Stock[display.Toy] += display.Count;
@@ -191,6 +215,7 @@ internal sealed partial class ShopState
         display.Toy = toy;
         display.Count = 0;
         Restock(display);
+        return true;
     }
 
     public int Restock(Display display)
@@ -257,11 +282,11 @@ internal sealed partial class ShopState
                 Stock[item.Toy]++;
         Customers.Clear();
         Replenish();
-        Spend(Upkeep);
+        Spend(DailyRent);
         if (Today.Visitors > 0)
         {
             int change = (int)Math.Round((double)(Today.CustomersServed - Today.Missed) / Today.Visitors * 8);
-            Reputation = Math.Clamp(Reputation + change, 15, 100);
+            Reputation = Math.Clamp(Reputation + change + Math.Min(2, Appeal / 3), 15, 100);
         }
 
         if (Day == CampaignDays)

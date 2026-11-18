@@ -11,6 +11,12 @@ public partial class ShopGame
 
     private void WorkshopPanel()
     {
+        if (showWorkshopDecor)
+        {
+            DecorPanel(makeOnly: true);
+            ShowQueue();
+            return;
+        }
         Toy recipe = Catalog.Toys[selectedToy];
         Header("Blueprints", "");
         HBoxContainer categories = Row();
@@ -36,6 +42,8 @@ public partial class ShopGame
         In(selected, recipe.Name, 19, Ink, true, true);
         Label mastery = In(selected, "", 14, Faded);
         Label details = Line("", 14, Ink);
+        Station[] route = [recipe.Station, .. recipe.FollowUp];
+        Line(string.Join("  ›  ", route.Select(ShopState.StationName)), 12, Faded);
 
         if (state.Unlocked[selectedToy])
         {
@@ -44,16 +52,38 @@ public partial class ShopGame
             experience.TooltipText = "Progress to the next level";
             content.AddChild(experience);
             HBoxContainer batch = Row();
-            Button fewer = InButton(batch, "−", () => { quantity--; UpdateReadouts(); }, 31);
-            Label units = In(batch, "", 15, Ink, true);
-            units.HorizontalAlignment = HorizontalAlignment.Center;
-            Button more = InButton(batch, "+", () => { quantity++; UpdateReadouts(); }, 31);
+            LineEdit units = new()
+            {
+                Name = "BatchQuantity", Text = quantity.ToString(), MaxLength = 3, Alignment = HorizontalAlignment.Center,
+                SizeFlagsHorizontal = SizeFlags.ExpandFill, CustomMinimumSize = new Vector2(68, 34),
+                TooltipText = $"Type a batch size from 1 to {ShopState.MaxBatch}."
+            };
+            units.AddThemeStyleboxOverride("normal", Box("fcf0cf", "a99667", 3));
+            units.AddThemeColorOverride("font_color", Ink);
+            units.AddThemeColorOverride("caret_color", Ink);
+            units.TextChanged += input =>
+            {
+                string digits = new(input.Where(char.IsAsciiDigit).ToArray());
+                if (digits != input)
+                {
+                    units.Text = digits;
+                    units.CaretColumn = digits.Length;
+                }
+                if (int.TryParse(digits, out int number))
+                    quantity = Math.Clamp(number, 1, ShopState.MaxBatch);
+                UpdateReadouts();
+            };
+            units.FocusExited += () => units.Text = quantity.ToString();
+            units.TextSubmitted += _ => units.ReleaseFocus();
+            Button fewer = InButton(batch, "−", () => AdjustQuantity(-1), 32);
+            batch.AddChild(units);
+            Button more = InButton(batch, "+", () => AdjustQuantity(1), 32);
             Button make = MakeButton("", () =>
             {
                 if (state.Queue(toy, quantity))
                     Changed();
             }, strong: true);
-            make.CustomMinimumSize = new Vector2(150, 34);
+            make.CustomMinimumSize = new Vector2(146, 34);
             batch.AddChild(make);
             Sync(() =>
             {
@@ -62,12 +92,18 @@ public partial class ShopGame
                 details.TooltipText = state.NeedsHands(toy) ? "Use the tools at the workshop for this toy." :
                     "This toy can finish while you run the shop.";
                 experience.Value = state.MasteryProgress(toy) * 100;
-                units.Text = $"×{quantity}";
                 fewer.Disabled = quantity <= 1;
-                more.Disabled = quantity >= 12;
-                make.Text = state.Orders.Count >= 4 ? "Queue full" : $"Make · ${state.ToyCost(toy) * quantity}";
-                make.Disabled = state.Orders.Count >= 4 || state.Cash < state.ToyCost(toy) * quantity;
+                more.Disabled = quantity >= ShopState.MaxBatch;
+                make.Text = state.Orders.Count >= ShopState.MaxOrders ? "Queue full" : $"Make · ${state.ToyCost(toy) * quantity}";
+                make.Disabled = state.Orders.Count >= ShopState.MaxOrders || state.Cash < state.ToyCost(toy) * quantity;
             });
+
+            void AdjustQuantity(int by)
+            {
+                quantity = Math.Clamp(quantity + by, 1, ShopState.MaxBatch);
+                units.Text = quantity.ToString();
+                UpdateReadouts();
+            }
         }
         else
         {
@@ -86,6 +122,10 @@ public partial class ShopGame
             });
         }
 
+        Label storage = Line("", 12, Faded);
+        Sync(() => storage.Text = state.OutputBlocked
+            ? $"Stockroom full · {state.StorageUsed}/{state.StorageCapacity}"
+            : $"Stockroom {state.StorageUsed}/{state.StorageCapacity}");
         ShowQueue();
     }
 
@@ -107,8 +147,8 @@ public partial class ShopGame
             {
                 int toy = items[i];
                 int parent = Catalog.Toys[toy].Prerequisite;
-                float y = items.Length > 1 ? 17 + i * 86 : tier.Key == 3 ? nodes[parent].Position.Y : 60;
-                nodes[toy] = new Rect2(13 + (tier.Key - 1) * 113, y, 72, 74);
+                float y = items.Length > 1 ? 17 + i * 86 : tier.Key >= 3 ? nodes[parent].Position.Y : 60;
+                nodes[toy] = new Rect2(7 + (tier.Key - 1) * 81, y, 67, 74);
             }
         }
 
@@ -137,12 +177,12 @@ public partial class ShopGame
             card.TooltipText = recipe.Name;
             Place(board, card, tile.Position.X, tile.Position.Y, tile.Size.X, tile.Size.Y);
             Control art = new ToySwatch { Toy = toy, MouseFilter = MouseFilterEnum.Ignore };
-            Place(card, art, 8, 3, 56, 44);
-            Label stock = Put(card, "", 6, 47, 33, 24, 12, Ink);
-            Label level = Put(card, "", 40, 47, 29, 24, 11, Ink);
+            Place(card, art, 7, 3, 53, 44);
+            Label stock = Put(card, "", 5, 47, 33, 24, 12, Ink);
+            Label level = Put(card, "", 34, 47, 28, 24, 11, Ink);
             level.HorizontalAlignment = HorizontalAlignment.Right;
             LockIcon locked = new() { MouseFilter = MouseFilterEnum.Ignore };
-            Place(card, locked, 54, 53, 11, 13);
+            Place(card, locked, 49, 53, 11, 13);
             Sync(() =>
             {
                 bool unlocked = state.Unlocked[toy];
@@ -167,25 +207,49 @@ public partial class ShopGame
 
     private void ShowQueue()
     {
-        IEnumerable<Order> tickets = state.Orders.Count > 0 ? state.Orders :
-            state.LastBatch is Order finished ? [finished] : [];
-        if (!tickets.Any())
-            return;
-        Divider();
-        HBoxContainer row = Row();
-        foreach (Order order in tickets)
+        if (state.Orders.Count > 0 || state.HeldOrders.Count > 0 || state.LastBatch != null)
+            Divider();
+        foreach (Order order in state.Orders)
+            JobRow(order, false);
+        foreach (Order order in state.HeldOrders)
+            JobRow(order, true);
+        if (state.Orders.Count == 0 && state.LastBatch is Order finished)
+            JobRow(finished, false);
+
+        void JobRow(Order order, bool held)
         {
-            Control ticket = new() { CustomMinimumSize = new Vector2(74, 61) };
+            HBoxContainer row = Row();
+            Control ticket = new() { CustomMinimumSize = new Vector2(217, 48), SizeFlagsHorizontal = SizeFlags.ExpandFill };
             row.AddChild(ticket);
-            Rectangle(ticket, 0, 0, 74, 61, order == state.Orders.FirstOrDefault() ? "d8d4a3" : "e7d2ab");
-            Place(ticket, new ToySwatch { Toy = order.Toy, MouseFilter = MouseFilterEnum.Ignore }, 5, 5, 34, 32);
-            Label remaining = Put(ticket, "", 44, 6, 26, 30, 13, Ink);
-            Label marks = Put(ticket, "", 6, 39, 63, 18, 12, Faded);
+            Rectangle(ticket, 0, 0, 217, 48, order == state.Orders.FirstOrDefault() ? "d8d4a3" : "e7d2ab");
+            Control picture = order.Decoration is Fixture fixture ?
+                Icon(StreetView.SpriteName(fixture), FixtureCrop(fixture)) :
+                new ToySwatch { Toy = order.Toy, MouseFilter = MouseFilterEnum.Ignore };
+            Place(ticket, picture, 5, 7, 34, 34);
+            Put(ticket, ShopState.ProjectName(order), 45, 4, 170, 20, 13, Ink);
+            Label marks = Put(ticket, "", 45, 24, 171, 18, 12, Faded);
+            if (order.Remaining > 0)
+            {
+                Button action = InButton(row, held ? "Resume" : "Set aside", () =>
+                {
+                    if (held ? state.Resume(order) : state.SetAside(order))
+                        Changed();
+                }, 89);
+                action.TooltipText = held ? "Continue this batch using its existing materials." :
+                    "Stop this batch and keep the unfinished work.";
+                Sync(() => action.Disabled = held ? state.Orders.Count >= ShopState.MaxOrders :
+                    state.HeldOrders.Count >= ShopState.MaxHeld);
+            }
             Sync(() =>
             {
-                remaining.Text = order.Remaining > 0 ? order.Remaining.ToString() : "✓";
-                marks.Text = $"✓{order.Made}   ×{order.Scrapped}";
-                ticket.TooltipText = Catalog.Toys[order.Toy].Name;
+                string station = ShopState.StationName(ShopState.StationFor(order));
+                if (order.Remaining == 0)
+                    marks.Text = $"✓ {order.Made}   × {order.Scrapped}";
+                else if (order.Transfer > 0 && !held)
+                    marks.Text = $"Cart → {station} · ×{order.Remaining}";
+                else
+                    marks.Text = $"{order.Stage + 1}/{ShopState.Stages(order)} {station} · ×{order.StageLeft}";
+                ticket.TooltipText = $"Finished {order.Made} · Scrapped {order.Scrapped} · Unfinished {order.Remaining}";
             });
         }
     }
@@ -198,7 +262,7 @@ public partial class ShopGame
         {
             int i = (int)tool;
             Button button = MakeButton("", () => Strike(tool), dark: true);
-            button.TooltipText = $"{tool}  {DirectionKeys[i]}";
+            button.TooltipText = $"{tool}  {DirectionKeys[i]} / {"WDSA"[i]}";
             Vector2 at = PadPositions[i];
             Place(craftPad, button, at.X, at.Y, 60, 60);
             Place(button, Icon(tool.ToString(), new Rect2(19, 15, 154, 112)), 5, 0, 50, 43);

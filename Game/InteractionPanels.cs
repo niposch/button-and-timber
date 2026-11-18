@@ -25,12 +25,18 @@ public partial class ShopGame
             return;
         }
 
+        if (showDecor)
+        {
+            DecorPanel();
+            return;
+        }
+
         Header("Shop layout", "");
         if (placing.HasValue)
             AddButton("Cancel", CancelPlacement);
 
         HBoxContainer row = Row();
-        foreach (Fixture kind in Enum.GetValues<Fixture>())
+        foreach (Fixture kind in new[] { Fixture.Display, Fixture.Table, Fixture.Register })
         {
             int owned = state.Furniture[(int)kind];
             bool installed = kind == Fixture.Register && state.Register != null;
@@ -46,6 +52,17 @@ public partial class ShopGame
             Put(furniture, ShopState.FixtureName(kind), 0, 51, 76, 22, 14, Ink).HorizontalAlignment = HorizontalAlignment.Center;
             Put(furniture, sub, 0, 71, 76, 18, 12, Faded).HorizontalAlignment = HorizontalAlignment.Center;
         }
+        Button decorations = MakeButton("", () =>
+        {
+            showDecor = true;
+            placing = null;
+            Rebuild();
+        });
+        decorations.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+        decorations.CustomMinimumSize = new Vector2(0, 94);
+        row.AddChild(decorations);
+        Place(decorations, Icon("FlowerCrate", new Rect2(30, 19, 132, 112)), 11, 1, 54, 49);
+        Put(decorations, "Decor", 0, 52, 76, 27, 14, Ink).HorizontalAlignment = HorizontalAlignment.Center;
 
         if (!placing.HasValue && selectedDisplay is Display item)
         {
@@ -84,8 +101,10 @@ public partial class ShopGame
                     continue;
                 var (card, caption) = ToyRow(toy, () =>
                 {
-                    state.Assign(item, toy);
-                    Changed();
+                    if (state.Assign(item, toy))
+                        Changed();
+                    else
+                        Changed("Stockroom full");
                 }, item.Toy == toy);
                 AddFamilyBadge(card, Catalog.Toys[toy].Family);
                 Sync(() => caption.Text = $"{Catalog.Toys[toy].Name}   ×{state.Stock[toy]}");
@@ -106,7 +125,7 @@ public partial class ShopGame
                     raise.Disabled = state.Prices[toy] >= Catalog.Toys[toy].Value * 3;
                 });
                 if (state.Shift != Shift.Open)
-                    AddButton("Empty", () => { state.Assign(item, -1); Changed(); });
+                    AddButton("Empty", () => Changed(state.Assign(item, -1) ? "" : "Stockroom full"));
             }
         }
 
@@ -117,7 +136,10 @@ public partial class ShopGame
         InButton(arrange, "Pack away", () =>
         {
             if (!state.Pack(item))
+            {
+                Changed("Stockroom full");
                 return;
+            }
             selectedDisplay = null;
             Changed();
         });
@@ -128,8 +150,7 @@ public partial class ShopGame
         var (button, caption) = ToyRow(item.Toy, () => PickDisplay(item));
         if (item.Toy < 0)
         {
-            Rect2 crop = item.Style == Fixture.Plant ? new Rect2(36, 12, 60, 62) : new Rect2(40, 15, 112, 112);
-            Place(button, Icon(StreetView.SpriteName(item.Style), crop), 7, 4, 32, 31);
+            Place(button, Icon(StreetView.SpriteName(item.Style), FixtureCrop(item.Style)), 7, 4, 32, 31);
         }
         else
             AddFamilyBadge(button, Catalog.Toys[item.Toy].Family);
@@ -162,6 +183,7 @@ public partial class ShopGame
     private void TownPanel()
     {
         Header("Town orders", "");
+        Upgrades();
         Contract(Catalog.Fairs[state.Season], state.CommissionToy, state.CommissionCount, state.CommissionPay,
             () => state.Commissions[state.Season], () => state.Deliver());
         for (int index = 0; index < 2; index++)
@@ -199,6 +221,80 @@ public partial class ShopGame
         }
     }
 
+    private void DecorPanel(bool makeOnly = false)
+    {
+        Header("Decor", placing.HasValue ? "Pick a tile" : Catalog.Seasons[state.Season]);
+        if (!makeOnly)
+            AddButton(placing.HasValue ? "Cancel" : "‹  Layout", () =>
+        {
+            if (placing.HasValue)
+                CancelPlacement();
+            else
+            {
+                showDecor = false;
+                Rebuild();
+            }
+        });
+        foreach (Decoration style in Decorations.All.OrderByDescending(style => style.Season == state.Season))
+        {
+            bool seasonal = style.Season >= 0;
+            bool inSeason = style.Season == state.Season;
+            var (card, caption) = ToyRow(-1);
+            Place(card, Icon(StreetView.SpriteName(style.Fixture), FixtureCrop(style.Fixture)), 5, 3, 36, 32);
+            caption.Text = style.Name;
+            if (style.Family is ToyFamily family)
+                AddFamilyBadge(card, family);
+            string when = seasonal ? Catalog.Seasons[style.Season] : "All year";
+            string perk = seasonal ? $" · +2 {style.Family} in season" : " · +1 appeal";
+            Label note = Line(when + perk, 12, inSeason ? Ink : Faded);
+            note.TooltipText = "More appeal brings visitors sooner. Each style counts once.";
+            HBoxContainer buttons = Row();
+            Button? build = makeOnly ? null : InButton(buttons, "", () => BeginPlacement(style.Fixture, false));
+            Button craft = InButton(buttons, $"Make ${style.Materials}", () =>
+            {
+                if (state.MakeDecoration(style.Fixture))
+                    Changed($"{style.Name} sent to workshop");
+            });
+            Sync(() =>
+            {
+                int owned = state.Furniture[(int)style.Fixture];
+                if (build != null)
+                {
+                    build.Text = owned > 0 ? $"Place ×{owned}" : $"Buy ${style.BuyPrice}";
+                    build.Disabled = state.Shift == Shift.Open || (owned == 0 && state.Cash < style.BuyPrice);
+                }
+                craft.Disabled = state.Orders.Count >= ShopState.MaxOrders || state.Cash < style.Materials;
+            });
+        }
+    }
+
+    private void Upgrades()
+    {
+        Label capacity = Line("", 14, Ink);
+        HBoxContainer first = Row();
+        Button storage = InButton(first, "", () =>
+        {
+            if (state.RentMoreStorage())
+                Changed();
+        });
+        Button cart = InButton(first, "", () =>
+        {
+            if (state.UpgradeCart())
+                Changed();
+        });
+        storage.TooltipText = "Rent a bigger stockroom. Rent comes out of the till at closing.";
+        cart.TooltipText = "Carry more workpieces per trip between machines.";
+        Sync(() =>
+        {
+            capacity.Text = $"Stockroom {state.StorageUsed}/{state.StorageCapacity}   ·   Cart ×{state.CartCapacity}";
+            storage.Text = state.CanRentMore ? $"{state.NextStorageCapacity} · ${state.NextDailyRent}/day" : "Stockroom max";
+            cart.Text = state.CanUpgradeCart ? $"Cart ×{state.NextCartCapacity} · ${state.CartUpgradePrice}" : "Cart max";
+            storage.Disabled = !state.CanRentMore;
+            cart.Disabled = !state.CanUpgradeCart || state.Cash < state.CartUpgradePrice;
+        });
+        Divider();
+    }
+
     private static TextureRect Icon(string name, Rect2 crop)
     {
         return new TextureRect
@@ -213,6 +309,9 @@ public partial class ShopGame
         };
     }
 
+    private static Rect2 FixtureCrop(Fixture fixture) => fixture == Fixture.Plant
+        ? new Rect2(35, 10, 65, 70) : new Rect2(39, 9, 114, 112);
+
     private void Strike(Tool tool)
     {
         if (summary || speed == 0 || state.Prompt is not Tool expected)
@@ -220,7 +319,7 @@ public partial class ShopGame
         int orders = state.Orders.Count;
         if (!state.UseTool(tool))
             return;
-        ShowBenchCue(tool == expected ? state.LastBenchCue : BenchCue.Mistake);
+        ShowBenchCue(tool == expected ? state.LastBenchCue : BenchCue.Mistake, guided: true);
         if (orders != state.Orders.Count)
         {
             Save();
@@ -230,7 +329,7 @@ public partial class ShopGame
             UpdateReadouts();
     }
 
-    private void ShowBenchCue(BenchCue cue)
+    private void ShowBenchCue(BenchCue cue, bool guided = false)
     {
         (benchFeedback, benchFeedbackColor) = cue switch
         {
@@ -244,11 +343,19 @@ public partial class ShopGame
         stage.BenchStroke(cue is BenchCue.Correct or BenchCue.Finished or BenchCue.LevelUp);
         switch (cue)
         {
-            case BenchCue.Correct: Play(wood, -17, 1.1f); break;
-            case BenchCue.Finished: Play(success, -15); break;
-            case BenchCue.LevelUp: Play(success, -12, 1.18f); break;
+            case BenchCue.Correct:
+            case BenchCue.Finished:
+            case BenchCue.LevelUp:
+                if (guided)
+                    PlayCraftSuccess(cue);
+                else
+                    Play(wood, -25);
+                break;
             case BenchCue.Scrapped:
-            case BenchCue.Mistake: Play(warning, -18); break;
+            case BenchCue.Mistake:
+                craftStreak = 0;
+                Play(warning, -18);
+                break;
         }
     }
 }

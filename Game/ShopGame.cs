@@ -28,6 +28,8 @@ public partial class ShopGame : Control
     private int quantity = 5;
     private int speed = 1;
     private bool moving;
+    private bool showDecor;
+    private bool showWorkshopDecor;
     private Fixture? placing;
     private bool summary;
     private bool sandboxRun;
@@ -58,6 +60,7 @@ public partial class ShopGame : Control
     private ConfirmationDialog newCampaign = null!;
     private Button ledger = null!;
     private Label workshopAttention = null!;
+    private Button decorPlans = null!;
     private readonly List<Button> tabs = [];
     private readonly List<Button> speeds = [];
     private readonly List<(Button Button, Label Heat, Label Stock)> demandTiles = [];
@@ -67,7 +70,6 @@ public partial class ShopGame : Control
     private AudioStream click = null!;
     private AudioStream wood = null!;
     private AudioStream warning = null!;
-    private AudioStream success = null!;
     private AudioStream coins = null!;
 
     public override void _Ready()
@@ -105,6 +107,7 @@ public partial class ShopGame : Control
         double elapsed = Math.Min(stepClock, .25);
         stepClock = 0;
         Shift before = state.Shift;
+        int visitorsBefore = state.Today.Visitors;
         int ordersBefore = state.Orders.Count;
         bool atBench = room == Room.Workshop && !summary && !newCampaign.Visible;
         Tool? previous = state.Prompt;
@@ -112,6 +115,7 @@ public partial class ShopGame : Control
         {
             state.AdvanceBench(elapsed * (atBench ? 1 : speed), atBench);
             state.AdvanceShop(elapsed * 5.5 * speed);
+            PlayShopMovement(elapsed, visitorsBefore);
             if (atBench && previous == null && state.Prompt.HasValue)
                 Play(click, -18, 1.17f);
             if (atBench && state.LastBenchCue != BenchCue.None)
@@ -153,7 +157,7 @@ public partial class ShopGame : Control
 
     public override void _Input(InputEvent input)
     {
-        if (room != Room.Workshop || summary || state.Orders.Count == 0 ||
+        if (room != Room.Workshop || summary || state.Orders.Count == 0 || GetViewport().GuiGetFocusOwner() is LineEdit ||
             newCampaign == null || newCampaign.Visible || options.GetPopup().Visible)
             return;
 
@@ -161,7 +165,8 @@ public partial class ShopGame : Control
         {
             InputEventKey { Pressed: true, Echo: false } key => key.Keycode switch
             {
-                Key.Up => Tool.Saw, Key.Right => Tool.Mallet, Key.Down => Tool.Brush, Key.Left => Tool.Needle, _ => null
+                Key.Up or Key.W => Tool.Saw, Key.Right or Key.D => Tool.Mallet,
+                Key.Down or Key.S => Tool.Brush, Key.Left or Key.A => Tool.Needle, _ => null
             },
             InputEventJoypadButton { Pressed: true } pad => pad.ButtonIndex switch
             {
@@ -340,6 +345,12 @@ public partial class ShopGame : Control
         Rectangle(this, 910, 165, 349, 1, "b4a17b");
         panelTitle = Put(this, "", 925, 111, 319, 33, 25, Ink, true);
         panelContext = Put(this, "", 926, 144, 316, 17, 12, Faded);
+        decorPlans = MakeButton("Decor", () =>
+        {
+            showWorkshopDecor = !showWorkshopDecor;
+            Rebuild();
+        });
+        Place(this, decorPlans, 1166, 120, 77, 34);
 
         scroll = new ScrollContainer
         {
@@ -362,8 +373,8 @@ public partial class ShopGame : Control
         click = Sound("select_003");
         wood = Sound("drop_002");
         warning = Sound("error_003");
-        success = Sound("confirmation_002");
         coins = Sound("glass_005");
+        MakeShopAudio();
         return;
 
         void Rule(int x) => Rectangle(this, x, 29, 1, 42, "526455");
@@ -375,6 +386,8 @@ public partial class ShopGame : Control
         summary = false;
         moving = false;
         placing = null;
+        showDecor = false;
+        showWorkshopDecor = false;
         reading = null;
         status = "";
         Rebuild();
@@ -408,6 +421,7 @@ public partial class ShopGame : Control
             return;
         placing = null;
         moving = false;
+        showDecor = false;
         selectedDisplay = display;
         reading = null;
         summary = false;
@@ -694,7 +708,7 @@ public partial class ShopGame : Control
             bool stock = state.StocksFamily(family);
             tile.Heat.Text = new string('•', heat);
             tile.Stock.Text = stock ? "✓" : "—";
-            tile.Button.TooltipText = $"{family} · demand {heat}/4 · {(stock ? "on display" : "none on display")}";
+            tile.Button.TooltipText = $"{family} · demand {heat}/6 · {(stock ? "on display" : "none on display")}";
         }
         earnings.Text = $"{state.Today.Sold} sold   ·   ${state.Today.Revenue}";
         action.Text = state.Shift switch
@@ -715,11 +729,13 @@ public partial class ShopGame : Control
         action.Visible = summary || room == Room.Shop;
         ledger.Text = summary ? "Close report" : "Till report";
         ledger.TooltipText = state.Notes.FirstOrDefault() ?? "";
+        decorPlans.Visible = room == Room.Workshop && !summary;
+        decorPlans.Text = showWorkshopDecor ? "Toys" : "Decor";
 
         for (int i = 0; i < tabs.Count; i++)
             SelectedStyle(tabs[i], i == (int)room, true);
         workshopAttention.Visible = room != Room.Workshop && state.Prompt.HasValue &&
-            state.Orders.FirstOrDefault() is Order pending && state.NeedsHands(pending.Toy);
+            state.Orders.FirstOrDefault() is Order pending && state.NeedsHands(pending);
         tabs[(int)Room.Workshop].TooltipText = workshopAttention.Visible ? "An order is waiting for a tool (2)" : "Workshop (2)";
         for (int i = 0; i < speeds.Count; i++)
             SelectedStyle(speeds[i], speed == Rates[i], true);
@@ -957,7 +973,10 @@ public partial class ShopGame : Control
     {
         stage.RegisterSale(amount);
         if (room == Room.Shop)
+        {
+            Play(drawer, -19);
             Play(coins, -15, amount >= 28 ? 1.18f : .99f);
+        }
     }
 
     private static AudioStream Sound(string name) => GD.Load<AudioStream>($"res://Art/Audio/{name}.ogg");

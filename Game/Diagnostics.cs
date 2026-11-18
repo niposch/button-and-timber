@@ -10,9 +10,10 @@ public partial class ShopGame
         await ToSignal(RenderingServer.Singleton, RenderingServer.SignalName.FramePostDraw);
         string prefix = Path.GetFullPath(destination);
         Directory.CreateDirectory(Path.GetDirectoryName(prefix)!);
-        for (int index = 0; index < 5; index++)
+        for (int index = 0; index < 7; index++)
         {
-            OpenRoom(index < 3 ? (Room)index : index == 3 ? Room.Shop : Room.Workshop);
+            OpenRoom(index < 3 ? (Room)index : index is 3 or 6 ? Room.Shop : Room.Workshop);
+            stage.SnapCamera();
             if (index == 1)
             {
                 state.Queue(1, 5);
@@ -40,6 +41,26 @@ public partial class ShopGame
                 state.Queue(selectedToy, 3);
                 Rebuild();
                 await ToSignal(GetTree().CreateTimer(1.05), SceneTreeTimer.SignalName.Timeout);
+            }
+            if (index == 5)
+            {
+                state.Orders.Clear();
+                state.Cash = 1000;
+                quantity = 24;
+                selectedToy = Catalog.TrainYard;
+                state.Queue(selectedToy, quantity);
+                AdvanceOnePass(state);
+                Rebuild();
+                await ToSignal(GetTree().CreateTimer(.34), SceneTreeTimer.SignalName.Timeout);
+            }
+            if (index == 6)
+            {
+                state.Shift = Shift.Setup;
+                state.Customers.Clear();
+                state.PlaceFixture(Fixture.FlowerCrate, new Cell(2, 2));
+                state.PlaceFixture(Fixture.PennantStand, new Cell(5, 1));
+                showDecor = true;
+                Rebuild();
             }
 
             UpdateReadouts();
@@ -77,14 +98,19 @@ public partial class ShopGame
             Furnish(state);
 
             OpenRoom(Room.Workshop);
+            LineEdit amount = content.FindChild("BatchQuantity", recursive: true, owned: false) as LineEdit ??
+                throw new InvalidOperationException("Batch quantity editor missing");
+            amount.EmitSignal(LineEdit.SignalName.TextChanged, "200");
+            Check(quantity == 200, "typed quantity above twelve");
+            amount.EmitSignal(LineEdit.SignalName.TextChanged, "5");
             int before = state.StockOnDisplay(1) + state.Stock[1];
             Check(state.Queue(1, 7), "batch order");
             state.AdvanceBench(.7, true);
             Check(state.Prompt.HasValue, "first tool prompt");
-            Key[] arrows = [Key.Up, Key.Right, Key.Down, Key.Left];
+            Key[] arrows = [Key.W, Key.D, Key.S, Key.A];
             using (InputEventKey key = new() { Pressed = true, Keycode = arrows[(int)state.Prompt!.Value] })
                 _Input(key);
-            Check(state.Orders[0].Step == 1 && state.Orders[0].Grade == 10, "correct keyboard arrow");
+            Check(state.Orders[0].Step == 1 && state.Orders[0].Grade == 10, "correct WASD direction");
             state.AdvanceBench(.6, true);
             int step = state.Orders[0].Step;
             int remaining = state.Orders[0].Remaining;
@@ -150,8 +176,10 @@ public partial class ShopGame
 
             TestLegacySave();
             TestBlueprintEconomy();
+            TestProductionLine();
+            TestDecorAndStorage();
             PlayCampaign();
-            GD.Print("Smoke test passed: onboarding, directional prompts, recipe variety, blueprint branches, matching demand, checkout, saves, and campaign.");
+            GD.Print("Smoke test passed: controls, expanded blueprints, staged batches, cart logistics, reserve limits, seasonal decor, saves, and campaign.");
             GetTree().Quit();
         }
         catch (Exception error)
@@ -163,7 +191,7 @@ public partial class ShopGame
 
     private static void FinishByHand(ShopState run)
     {
-        while (run.Orders.Count > 0)
+        for (int tick = 0; tick < 10000 && run.Orders.Count > 0 && !run.OutputBlocked; tick++)
         {
             run.AdvanceBench(1, true);
             if (run.Prompt is Tool tool)
@@ -235,11 +263,20 @@ public partial class ShopGame
         Check(run.Cash == 463 && run.Prices[Catalog.Engine] == 22 && run.Practice[Catalog.Engine] == 16 &&
             run.Unlocked[Catalog.PebbleDice] && run.Stock[Catalog.PebbleDice] == 5 && run.Today.Requests[2] == 1 &&
             run.Prompt.HasValue, "version-one prices, practice, requests and pending tools migrate");
+
+        run = new ShopState { Schema = 2 };
+        run.Practice[Catalog.Engine] = 12;
+        run.Orders.Add(new Order { Toy = Catalog.SignalCabin, Remaining = 4, Made = 2, Plan = [Tool.Mallet], PromptIn = 0 });
+        run.UpgradeSave();
+        Check(run.Practice[Catalog.Engine] == 12 && run.Orders[0].Quantity == 6 && run.Orders[0].StageLeft == 4 &&
+            run.Prompt == Tool.Mallet && ShopState.Stages(run.Orders[0]) == 1, "version-two orders keep paid work and prompts");
     }
 
     private static void TestBlueprintEconomy()
     {
         ShopState run = new() { Schema = ShopState.CurrentSchema, Cash = 1500 };
+        run.RentMoreStorage();
+        run.RentMoreStorage();
         HashSet<int> lengths = [];
         HashSet<Tool> starters = [];
         for (int i = 0; i < 16; i++)
@@ -262,7 +299,9 @@ public partial class ShopGame
         Check(run.Yield(yard) < run.Yield(Catalog.Engine) && run.ToyCost(yard) < run.Prices[yard] &&
             run.Prices[yard] - run.ToyCost(yard) > run.Prices[Catalog.Engine] - run.ToyCost(Catalog.Engine),
             "advanced train has more risk and more upside");
-        Check(run.Queue(yard, 2) && run.ActiveStation == Station.Assembly, "train yard uses the assembly machine");
+        run.BenchSeed = 0x89cbc475;
+        Check(run.Queue(yard, 2) && run.ActiveStation == Station.Bench && ShopState.Stages(run.Orders[0]) == 3,
+            "train yard starts with woodwork");
         run.AdvanceBench(.75, true);
         int baseChance = run.CraftChance(run.Orders[0]);
         Tool wrong = Tools.First(tool => tool != run.Prompt);
@@ -299,6 +338,75 @@ public partial class ShopGame
         Check(run.Today.Revenue >= 79 && run.Cash >= openingCash + 79, "premium train pays at checkout");
     }
 
+    private static void AdvanceOnePass(ShopState run)
+    {
+        Order order = run.Orders[0];
+        int stage = order.Stage;
+        for (int tick = 0; tick < 500 && run.Orders.Contains(order) && order.Stage == stage; tick++)
+        {
+            run.AdvanceBench(.75, true);
+            if (run.Prompt is Tool tool)
+                run.UseTool(tool);
+        }
+    }
+
+    private static void TestProductionLine()
+    {
+        ShopState run = new() { Schema = ShopState.CurrentSchema, Cash = 3000 };
+        run.Unlocked[Catalog.TrainYard] = true;
+        run.RentMoreStorage();
+        Check(run.Queue(Catalog.TrainYard, 35), "queue larger train yard batch");
+        ShopState fast = JsonSerializer.Deserialize<ShopState>(JsonSerializer.Serialize(run))!;
+        Check(fast.UpgradeCart(), "buy bigger cart");
+        AdvanceOnePass(run);
+        AdvanceOnePass(fast);
+        Order batch = run.Orders[0];
+        Check(batch.Stage == 1 && run.ActiveStation == Station.Assembly && batch.Made == 0 &&
+            run.Stock[Catalog.TrainYard] == 0 && batch.StageLeft == batch.Remaining, "whole pass before moving machines");
+        Check(fast.Orders[0].Transfer < batch.Transfer, "bigger cart makes fewer trips");
+        int alreadyPaid = run.Cash;
+        Check(run.SetAside(batch) && run.HeldOrders.Count == 1, "set aside unfinished woodwork");
+        ShopState saved = TestDiskSave(run);
+        Order held = saved.HeldOrders[0];
+        double transfer = held.Transfer;
+        saved.AdvanceBench(20, true);
+        Check(held.Transfer == transfer && saved.Resume(held) && saved.Cash == alreadyPaid, "resume paid batch with saved work");
+        AdvanceOnePass(saved);
+        Check(saved.ActiveStation == Station.Finishing && held.Made == 0, "only final station ships toys");
+        FinishByHand(saved);
+        Check(saved.Orders.Count == 0 && held.Made > 0 && held.Made + held.Scrapped == 35, "all units accounted for");
+    }
+
+    private static void TestDecorAndStorage()
+    {
+        ShopState run = new() { Schema = ShopState.CurrentSchema, Cash = 3000 };
+        int original = run.Forecast(ToyFamily.Plush);
+        Check(run.PlaceFixture(Fixture.FlowerCrate, new Cell(1, 2)) != null, "buy spring decoration");
+        Check(run.Forecast(ToyFamily.Plush) == original + 2 && run.Appeal == 3, "seasonal decoration boosts demand and appeal");
+        Check(run.PlaceFixture(Fixture.FlowerCrate, new Cell(2, 2)) != null && run.Appeal == 3, "duplicate does not stack");
+        run.Day = 7;
+        Check(run.DecorDemand(ToyFamily.Plush) == 0 && run.Appeal == 1, "seasonal effect expires");
+        Check(run.MakeDecoration(Fixture.PennantStand), "craft decor instead of buying");
+        FinishByHand(run);
+        int paid = run.Cash;
+        Check(run.PlaceFixture(Fixture.PennantStand, new Cell(3, 2)) != null && run.Cash == paid &&
+            run.DecorDemand(ToyFamily.Motion) == 2, "place crafted decor from crate");
+
+        run.Stock[0] += run.StorageCapacity - run.StorageUsed;
+        Check(run.Queue(Catalog.PebbleDice, ShopState.MaxBatch), "support 250 units");
+        run.AdvanceBench(120, true);
+        Check(run.OutputBlocked && run.Orders[0].Remaining == ShopState.MaxBatch && run.StorageUsed == run.StorageCapacity,
+            "full stockroom pauses output without loss");
+        int rent = run.DailyRent;
+        Check(run.RentMoreStorage() && run.DailyRent > rent && !run.OutputBlocked, "room and rent increase together");
+        run.AdvanceBench(20, true);
+        Check(run.Orders[0].Made > 0 && run.StorageUsed <= run.StorageCapacity, "batch resumes within upgraded limit");
+        run.Shift = Shift.Open;
+        int before = run.Cash;
+        run.Close();
+        Check(before - run.Cash == run.DailyRent, "rent charged at closing");
+    }
+
     private static void Furnish(ShopState run)
     {
         if (run.Register == null)
@@ -319,6 +427,8 @@ public partial class ShopGame
         run.Assign(games, Catalog.PebbleDice);
         for (int day = 1; day <= ShopState.CampaignDays; day++)
         {
+            if (day == 3)
+                run.RentMoreStorage();
             if (run.Cash >= 330)
                 run.Expand();
             foreach (Display item in run.Displays.Where(item => item.Toy >= 0))

@@ -35,8 +35,8 @@ internal sealed partial class Customer
 
 internal sealed partial class ShopState
 {
-    public const int CurrentSchema = 2;
-    public int[] Furniture { get; set; } = [2, 1, 1, 0];
+    public const int CurrentSchema = 3;
+    public int[] Furniture { get; set; } = [2, 1, 1, 0, 0, 0, 0, 0];
     public double ShopRemainder { get; set; }
     public int LastTicket { get; set; }
     public int[] SideOrders { get; set; } = new int[4];
@@ -48,7 +48,8 @@ internal sealed partial class ShopState
     {
         ToyFamily favourite = Catalog.SeasonalDemand[(Season + (Date - 1) / 3) % Catalog.Families.Length];
         ToyFamily second = Catalog.SeasonalDemand[(Season + (Date - 1) / 2 + 1) % Catalog.Families.Length];
-        return family == favourite ? (Fair ? 4 : 3) : family == second ? 2 : 1;
+        int expected = family == favourite ? (Fair ? 4 : 3) : family == second ? 2 : 1;
+        return expected + DecorDemand(family);
     }
 
     public int Shortages(Till report, ToyFamily family) => Catalog.Toys.Select((toy, index) => (toy, index))
@@ -64,12 +65,12 @@ internal sealed partial class ShopState
 
     public static string FixtureName(Fixture fixture) => fixture switch
     {
-        Fixture.Display => "Shelf", Fixture.Table => "Table", Fixture.Plant => "Plant", _ => "Register"
+        Fixture.Display => "Shelf", Fixture.Table => "Table", Fixture.Register => "Register", _ => Decorations.Get(fixture).Name
     };
 
     public static int FurnitureCost(Fixture fixture) => fixture switch
     {
-        Fixture.Display => 38, Fixture.Table => 56, Fixture.Plant => 18, _ => 0
+        Fixture.Display => 38, Fixture.Table => 56, Fixture.Register => 0, _ => Decorations.Get(fixture).BuyPrice
     };
 
     public void UpgradeSave()
@@ -77,10 +78,9 @@ internal sealed partial class ShopState
         if (Schema >= CurrentSchema)
             return;
 
-        if (Unlocked.Length < Catalog.Toys.Length || Stock.Length < Catalog.Toys.Length ||
-            Prices.Length < Catalog.Toys.Length || Practice.Length < Catalog.Toys.Length || !Unlocked[Catalog.PebbleDice])
+        int count = Catalog.Toys.Length;
+        if (Unlocked.Length < count || Stock.Length < count || Prices.Length < count || Practice.Length < count)
         {
-            int count = Catalog.Toys.Length;
             int[] stock = Stock;
             int[] experience = Practice;
             int[] prices = Prices;
@@ -97,19 +97,30 @@ internal sealed partial class ShopState
             Practice = experience;
             Prices = prices;
             Unlocked = unlocked;
-            Stock[Catalog.PebbleDice] += 5;
+        }
+        if (!Unlocked[Catalog.PebbleDice])
+        {
+            Stock[Catalog.PebbleDice] = 5;
             Unlocked[Catalog.PebbleDice] = true;
         }
 
-        for (int i = 0; i < Practice.Length; i++)
-            Practice[i] *= 2;
+        int[] furniture = Furniture;
+        Array.Resize(ref furniture, Enum.GetValues<Fixture>().Length);
+        Furniture = furniture;
+        if (Schema < 2)
+            for (int i = 0; i < Practice.Length; i++)
+                Practice[i] *= 2;
         ResizeRequests(Today);
         ResizeRequests(Yesterday);
         foreach (Order order in Orders)
         {
-            PrepareUnit(order);
+            order.Quantity = order.Made + order.Scrapped + order.Remaining;
+            order.StageLeft = order.Remaining;
+            order.SinglePass = true;
+            if (order.Plan.Length == 0)
+                PrepareWave(order);
             order.Step = Math.Min(order.Step, order.Plan.Length - 1);
-            order.Work = Math.Clamp(order.Work, 0, ToolWindow(order.Toy) - .02);
+            order.Work = Math.Clamp(order.Work, 0, ToolWindow(order) - .02);
         }
 
         if (Schema == 0)
@@ -184,7 +195,8 @@ internal sealed partial class ShopState
 
     public bool Pack(Display display)
     {
-        if (Shift == Shift.Open || !Displays.Remove(display))
+        if (Shift == Shift.Open || (display.Count > 0 && StorageUsed + display.Count > StorageCapacity) ||
+            !Displays.Remove(display))
             return false;
         if (display.Toy >= 0)
             Stock[display.Toy] += display.Count;
@@ -243,7 +255,7 @@ internal sealed partial class ShopState
             if (Minute >= NextVisitor && Minute < ShopHours - 45)
             {
                 Visit();
-                int crowd = (Fair ? 4 : 0) + Reputation / 20 + (Expanded ? 2 : 0);
+                int crowd = (Fair ? 4 : 0) + Reputation / 20 + (Expanded ? 2 : 0) + Math.Min(6, Appeal);
                 NextVisitor = Minute + 26 - crowd + Roll(7) - 3;
             }
             if (Minute >= ShopHours && Customers.Count == 0)
@@ -324,7 +336,8 @@ internal sealed partial class ShopState
         }
 
         int patron = Roll(100);
-        int tier = patron < (Fair ? 29 : 21) ? 3 : patron < 58 ? 2 : 1;
+        int rare = Reputation >= 66 ? (Fair ? 18 : 10) : 4;
+        int tier = patron < rare ? 4 : patron < (Fair ? 37 : 25) ? 3 : patron < 58 ? 2 : 1;
         int[] candidates = Enumerable.Range(0, Catalog.Toys.Length)
             .Where(toy => Unlocked[toy] && Catalog.Toys[toy].Family == family && Catalog.Toys[toy].Tier <= tier)
             .OrderByDescending(toy => Catalog.Toys[toy].Tier).ToArray();

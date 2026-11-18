@@ -21,8 +21,11 @@ public partial class StreetView : Control
     private readonly List<(Rect2 Bounds, object Item)> hits = [];
     private readonly List<(int Amount, float Age)> sales = [];
     private readonly Dictionary<string, Texture2D> sprites = [];
+    private readonly Dictionary<string, Vector2[]> feetBySprite = [];
     private readonly Dictionary<Customer, Vector2> positions = [];
     private Vector2 origin;
+    private Vector2 camera;
+    private static readonly Vector2[] RoomOffsets = [Vector2.Zero, new(.8f, -9.15f), new(12.7f, 11.3f)];
     private float scale;
     private float clock;
     private float benchFlash;
@@ -43,20 +46,19 @@ public partial class StreetView : Control
     {
         if (!ReducedMotion && !Paused)
             clock += (float)delta;
+        Vector2 destination = RoomOffsets[(int)Room];
+        camera = ReducedMotion ? destination : camera.Lerp(destination, 1 - Mathf.Exp(-(float)delta * 6.5f));
         benchFlash = Math.Max(0, benchFlash - (float)delta);
-        if (Room == Room.Workshop && !Paused)
+        if (!Paused)
             UpdateWorker((float)delta);
-        if (Room == Room.Shop)
+        foreach (Customer person in State.Customers)
         {
-            foreach (Customer person in State.Customers)
-            {
-                Vector2 target = CustomerPosition(person);
-                positions[person] = positions.TryGetValue(person, out Vector2 previous)
-                    ? previous.Lerp(target, 1 - Mathf.Exp(-(float)delta * 17)) : target;
-            }
-            foreach (Customer gone in positions.Keys.Where(person => !State.Customers.Contains(person)).ToArray())
-                positions.Remove(gone);
+            Vector2 target = CustomerPosition(person);
+            positions[person] = positions.TryGetValue(person, out Vector2 previous)
+                ? previous.Lerp(target, 1 - Mathf.Exp(-(float)delta * 17)) : target;
         }
+        foreach (Customer gone in positions.Keys.Where(person => !State.Customers.Contains(person)).ToArray())
+            positions.Remove(gone);
         for (int i = sales.Count - 1; i >= 0; i--)
         {
             var sale = sales[i];
@@ -68,6 +70,8 @@ public partial class StreetView : Control
         }
         QueueRedraw();
     }
+
+    internal void SnapCamera() => camera = RoomOffsets[(int)Room];
 
     internal void RegisterSale(int amount)
     {
@@ -112,17 +116,39 @@ public partial class StreetView : Control
             return;
 
         hits.Clear();
-        scale = Math.Min(Size.X / 825, Size.Y / (Room == Room.Town ? 555 : 493));
-        origin = new Vector2(Size.X / 2 - (Room == Room.Shop && State.Expanded ? 64 : 24) * scale,
-            Size.Y * (Room == Room.Town ? .26f : .294f));
+        scale = Math.Min(Size.X / 902, Size.Y / 541);
+        float offsetX = 24 + (State.Expanded ? 39 * Mathf.Clamp(1 - camera.Length() / 5, 0, 1) : 0);
+        origin = new Vector2(Size.X / 2 - offsetX * scale, Size.Y * .292f) - Project(camera);
         Backdrop();
-        switch (Room)
+        Vector2 streetOrigin = origin;
+        if (Near(Room.Shop) || Near(Room.Workshop))
+            StreetGround();
+        PaintRoom(Room.Workshop, Workshop);
+        origin = streetOrigin;
+        if (Near(Room.Shop) || Near(Room.Workshop))
+            StreetLife(back: true);
+        PaintRoom(Room.Shop, Shop);
+        PaintRoom(Room.Town, Town);
+        origin = streetOrigin;
+        if (Near(Room.Shop) || Near(Room.Workshop))
+            StreetLife(back: false);
+
+        bool Near(Room zone)
         {
-            case Room.Shop: Shop(); break;
-            case Room.Workshop: Workshop(); break;
-            case Room.Town: Town(); break;
+            Vector2 bounds = Project(RoomOffsets[(int)zone] - camera);
+            return Math.Abs(bounds.X) < Size.X * .86f && Math.Abs(bounds.Y) < Size.Y * .90f;
+        }
+
+        void PaintRoom(Room zone, Action paint)
+        {
+            if (!Near(zone))
+                return;
+            origin = streetOrigin + Project(RoomOffsets[(int)zone]);
+            paint();
         }
     }
+
+    private Vector2 Project(Vector2 point) => new Vector2(39 * (point.X - point.Y), 19.5f * (point.X + point.Y)) * scale;
 
     private void Backdrop()
     {
@@ -148,19 +174,103 @@ public partial class StreetView : Control
             Pixel(point.X - 2, point.Y - 3, 2, 1, "ecedb73a");
         }
 
-        Ground(-2, 5.9f, 12, 8.3f, "afb2a0");
-        Ground(-2, 6.47f, 12, 7.93f, "c8bfa9");
-        for (int x = -2; x < 12; x++)
+    }
+
+    private void StreetGround()
+    {
+        string terrain = State.Season switch { 1 => "a2ad83", 2 => "aca181", 3 => "a3b3aa", _ => "98a88a" };
+        Ground(-12, -16, 21, 13, terrain);
+        Ground(-12, 8.62f, 21, 10.97f, "777f77");
+        Ground(-12, 8.6f, 21, 8.77f, "ddd1b4");
+        Ground(-12, 10.9f, 21, 11.05f, "acaa92");
+        Ground(-12, 11.05f, 21, 12.55f, "beb59b");
+        Walkway(6.16f, 8.59f);
+        Walkway(-3.05f, -.16f);
+        Ground(-1.8f, -11, -.15f, 8.1f, "b8b498");
+        Ground(9.62f, -11, 10.88f, 8.12f, "b9b49a");
+        for (int x = -11; x < 21; x += 2)
         {
-            Ground(x + .02f, 6.53f, x + .98f, 7.18f, x % 2 == 0 ? "ccc4b0" : "c4baa4");
-            Ground(x + .02f, 7.22f, x + .98f, 7.87f, x % 2 == 0 ? "c4baa4" : "cec5ae");
+            Ground(x + .04f, 9.73f, x + .69f, 9.80f, "b1ae94");
+            Ground(x + .08f, 11.95f, x + .82f, 12.52f, "b5ae96");
         }
+        for (int i = 0; i < 6; i++)
+            Ground(10.10f + .37f * i, 8.79f, 10.28f + .37f * i, 10.82f, "dad2b7");
+
+        for (int x = -8; x < 18; x++)
+        for (int y = 0; y < 6; y++)
+        {
+            if (x is >= -2 and <= 10 || Hash(x, y) % 4 == 1)
+                continue;
+            Vector2 tuft = P(x + .17f + Hash(x, y) % 6 * .112f, y + .31f, 1);
+            Pixel(tuft.X, tuft.Y, 4, 2, "687e5e70");
+            Pixel(tuft.X + 3, tuft.Y - 3, 2, 3, "758c63");
+        }
+        House(-5.45f, -5.15f, 2.75f, 2.35f, "c8a882", "a26756");
+        House(11.77f, -5.58f, 2.76f, 2.54f, "dad1a7", "628780");
+        House(-5.15f, -8.0f, 2.70f, 2.10f, "d2b18f", "8f6c59");
+        Garden(-3.72f, .94f);
+        Garden(10.71f, 3.62f);
+        Garden(-2.72f, -7.1f);
+        Tree(-2.10f, 3.41f, .99f);
+        Tree(-2.41f, -2.85f, .89f);
+        Tree(11.42f, .55f, 1.1f);
+        Tree(10.32f, -6.8f, .93f);
+        Sprite("PlantTall", 8.91f, .73f, 1.5f);
+        Sprite("FlowerCrate", -.72f, -1.24f, 1.68f);
+
+        void Walkway(float start, float end)
+        {
+            Ground(-12, start, 21, end, "b3ad93");
+            for (int x = -12; x < 21; x++)
+            for (float y = start; y < end - .2f; y += .57f)
+            {
+                string color = Hash(x, (int)(y * 50)) % 3 == 0 ? "cfc4aa" : "c2b69d";
+                Ground(x + .024f, y + .018f, x + .976f, Math.Min(end - .02f, y + .55f), color);
+            }
+        }
+
+        void Garden(float x, float y)
+        {
+            Ground(x - .09f, y - .12f, x + 1.13f, y + .94f, "728b68");
+            for (int i = 0; i < 4; i++)
+            {
+                Ground(x + i * .27f, y, x + .19f + i * .27f, y + .79f, "7b7353");
+                Vector2 bloom = P(x + .1f + i * .27f, y + .34f, 3);
+                DrawCircle(bloom, 3, ToyArt.C(i % 2 == 0 ? "d6a27b" : "e8c78e"));
+            }
+        }
+    }
+
+    private void StreetLife(bool back)
+    {
+        List<(float Depth, Action Paint)> people = [];
+        for (int i = back ? 5 : 0; i < (back ? 8 : 5); i++)
+        {
+            int person = i;
+            float drift = (clock * (.37f + i % 3 * .082f) + i * 4.13f) % 22;
+            bool towardTown = i % 2 == 0;
+            float x = towardTown ? drift - 6 : 16 - drift;
+            float y = i < 5 ? 7.65f + i % 2 * .47f : -1.92f + i % 2 * .54f;
+            people.Add((x + y, () =>
+            {
+                int frame = ReducedMotion ? 0 : 1 + (int)(clock * 7 + person * 7.9f) % 7;
+                Figure(x, y, person % 6, towardTown ? 2 : 0, frame);
+            }));
+        }
+        DrawProps(people);
+        if (back)
+            return;
+        Tree(-1.17f, 8.49f, .85f);
+        Tree(10.05f, 7.95f, .89f);
+        Sign(8.2f, 7.95f);
     }
 
     private void Shop()
     {
         int width = State.Width;
         WallRoom(width, 6, false);
+        Box(width - 1.65f, 6f, 1.44f, .54f, -9, 0, "ae9777");
+        Segment(P(width - 1.58f, 6.50f), P(width - .27f, 6.50f), "d3c098", 2);
         Window(1.05f, 2.84f, false);
         Window(width - 2.6f, width - .86f, false);
         Window(.76f, 2.59f, true);
@@ -227,8 +337,6 @@ public partial class StreetView : Control
         DrawProps(props);
         if (State.Register is Display register)
             CheckoutFeedback(register);
-        Tree(-.9f, 7.55f, .83f);
-        Sprite("PlantTall", width + 1.42f, .86f, 1.5f);
     }
 
     private void Workshop()
@@ -258,9 +366,17 @@ public partial class StreetView : Control
             furnishings.Add((point.X + point.Y, () => DrawStation(station)));
         }
         furnishings.Add((workerPosition.X + workerPosition.Y, DrawWorker));
+        if (State.Orders.FirstOrDefault() is { Transfer: > 0 })
+        {
+            Vector2 cart = workerPosition + (workerFacing switch
+            {
+                0 => new Vector2(-.57f, .18f), 2 => new Vector2(.57f, -.14f),
+                3 => new Vector2(.14f, -.57f), _ => new Vector2(-.14f, .57f)
+            });
+            furnishings.Add((cart.X + cart.Y, () => Sprite($"Cart{State.CartTier}", cart.X, cart.Y, 2.1f)));
+        }
         DrawProps(furnishings);
         DrawToolBubble();
-        Tree(-1.11f, 7.45f, .84f);
     }
 
     private void UpdateWorker(float elapsed)
@@ -302,16 +418,15 @@ public partial class StreetView : Control
         if (!ShowToolPrompt || State.Prompt is not Tool prompt || State.Orders.FirstOrDefault() is not Order order)
             return;
 
-        Vector2 station = WorkshopStations[(int)Catalog.Toys[order.Toy].Station].Machine;
+        Vector2 station = WorkshopStations[(int)ShopState.StationFor(order)].Machine;
         Vector2 at = P(station.X, station.Y, 95) + new Vector2(24, 0);
         DrawCircle(at + new Vector2(0, 3), 35, ToyArt.C("304a4180"), antialiased: true);
         DrawCircle(at, 35, ToyArt.C("4a6254"), antialiased: true);
         DrawCircle(at, 32, ToyArt.C("fff0c9"), antialiased: true);
         DrawCircle(at + new Vector2(-16, 34), 5, ToyArt.C("f8e6b4"), antialiased: true);
-        DrawTextureRectRegion(Texture(prompt.ToString()), new Rect2(at + new Vector2(-31, -23), new Vector2(56, 42)),
+        DrawTextureRectRegion(Texture(prompt.ToString()), new Rect2(at + new Vector2(-27, -25), new Vector2(54, 44)),
             new Rect2(19, 15, 154, 112));
-        GameIcons.Arrow(this, prompt, at + new Vector2(17, 4), 16, ToyArt.C("365a50"));
-        float fraction = (float)Math.Clamp(1 - order.Work / State.ToolWindow(order.Toy), 0, 1);
+        float fraction = (float)Math.Clamp(1 - order.Work / State.ToolWindow(order), 0, 1);
         DrawRect(new Rect2(at.X - 19, at.Y + 21, 38, 3), ToyArt.C("b8ac87"));
         DrawRect(new Rect2(at.X - 19, at.Y + 21, 38 * fraction, 3), ToyArt.C("486f61"));
     }
@@ -482,8 +597,16 @@ public partial class StreetView : Control
         if (!active)
             return;
 
-        int toy = State.Orders[0].Toy;
-        ToyArt.Draw(this, toy, P(spot.X + .19f, spot.Y + .24f, table.Height), scale * 1.17f);
+        Order order = State.Orders[0];
+        if (order.Decoration is Fixture decoration)
+        {
+            Vector2 item = P(spot.X + .19f, spot.Y + .24f, table.Height);
+            DrawTextureRect(Texture(SpriteName(decoration)), new Rect2(item - new Vector2(38, 38), new Vector2(76, 76)), false);
+        }
+        else if (order.Stage + 1 == ShopState.Stages(order))
+            ToyArt.Draw(this, order.Toy, P(spot.X + .19f, spot.Y + .24f, table.Height), scale * 1.17f);
+        else
+            Box(spot.X + .04f, spot.Y + .09f, .31f, .29f, table.Height, table.Height + 11, "c59562");
         if (benchFlash > 0 && !ReducedMotion)
         {
             Vector2 glint = P(spot.X + .25f, spot.Y + .29f, table.Height + 13);
@@ -661,12 +784,56 @@ public partial class StreetView : Control
 
     private void Figure(float x, float y, int style, int direction, int frame, string? actionSprite = null)
     {
-        Ground(x - .16f, y - .13f, x + .21f, y + .21f, "4c413c4a");
+        string name = actionSprite ?? $"Person{style}";
+        Texture2D texture = Texture(name);
+        if (!feetBySprite.TryGetValue(name, out Vector2[]? feet))
+            feetBySprite[name] = feet = MeasureFeet(texture);
         float size = 123 * scale;
         Vector2 p = P(x, y);
-        DrawTextureRectRegion(Texture(actionSprite ?? $"Person{style}"),
-            new Rect2(p - new Vector2(size * .5f, size * .71f), new Vector2(size, size)),
+        Vector2 contact = feet[direction * 8 + frame] * (size / 112);
+        Vector2 center = p + new Vector2(contact.X - size / 2, -.05f);
+        Vector2[] shadow = new Vector2[16];
+        for (int i = 0; i < shadow.Length; i++)
+            shadow[i] = center + Vector2.FromAngle(i * Mathf.Tau / shadow.Length) * new Vector2(10, 3.5f) * scale;
+        DrawColoredPolygon(shadow, ToyArt.C("453c356d"));
+        DrawTextureRectRegion(texture,
+            new Rect2(p - new Vector2(size * .5f, contact.Y - .7f * scale), new Vector2(size, size)),
             new Rect2(frame * 112, direction * 112, 112, 112));
+    }
+
+    private static Vector2[] MeasureFeet(Texture2D texture)
+    {
+        using Image bitmap = texture.GetImage();
+        if (bitmap.IsCompressed())
+            bitmap.Decompress();
+        bitmap.Convert(Image.Format.Rgba8);
+        byte[] pixels = bitmap.GetData();
+        int width = bitmap.GetWidth();
+        Vector2[] result = new Vector2[32];
+        for (int direction = 0; direction < 4; direction++)
+        for (int frame = 0; frame < 8; frame++)
+        {
+            Vector2 contact = new(56, 80);
+            for (int y = 108; y >= 66; y--)
+            {
+                int sum = 0;
+                int count = 0;
+                for (int x = 15; x < 97; x++)
+                {
+                    int offset = ((direction * 112 + y) * width + frame * 112 + x) * 4 + 3;
+                    if (pixels[offset] < 145)
+                        continue;
+                    sum += x;
+                    count++;
+                }
+                if (count < 2)
+                    continue;
+                contact = new Vector2((float)sum / count, y + .76f);
+                break;
+            }
+            result[direction * 8 + frame] = contact;
+        }
+        return result;
     }
 
     private void CheckoutFeedback(Display register)
@@ -711,10 +878,10 @@ public partial class StreetView : Control
 
     internal static string SpriteName(Fixture fixture) => fixture switch
     {
-        Fixture.Display => "Shelf", Fixture.Table => "Table", Fixture.Plant => "Plant", _ => "Register"
+        Fixture.Display => "Shelf", Fixture.Table => "Table", Fixture.Register => "Register", _ => fixture.ToString()
     };
 
-    private static float SpriteSpan(Fixture fixture) => fixture == Fixture.Plant ? 1.5f : 2.9f;
+    private static float SpriteSpan(Fixture fixture) => fixture == Fixture.Plant ? 1.5f : fixture > Fixture.Plant ? 2.35f : 2.9f;
 
     private Texture2D Texture(string name)
     {
