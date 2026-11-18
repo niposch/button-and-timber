@@ -16,7 +16,7 @@ if ($Setup) {
     $downloads = @(
         @{
             File = 'godot-web.zip'; Directory = (Join-Path $toolchainRoot 'godot'); Algorithm = 'SHA256'
-            Hash = '7e54140fd3e84dfbf676bce56f6a792f1bc7734db36c67d860376b002f1a21d8'
+            Hash = '607506c10bdb9f0c3ef92329799275688712991b90073a725a9877e203a242a6'
             Url = 'https://github.com/ComplexRobot/godot-dotnet-web-export/releases/download/4.7.2-stable/Godot_v4.7.2-stable_mono_web_export_win64.zip'
         },
         @{

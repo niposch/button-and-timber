@@ -22,7 +22,7 @@ jobs:
         id: toolchain
         with:
           path: .godot/web-toolchain
-          key: button-and-timber-web-godot4.7.2-dotnet9.0.319
+          key: button-and-timber-web-godot4.7.2-607506c1-dotnet9.0.319
       - name: Build browser game
         shell: pwsh
         run: |

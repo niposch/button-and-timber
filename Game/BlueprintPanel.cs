@@ -292,7 +292,7 @@ public partial class ShopGame
             }
         }
 
-        craftResult.Text = speed == 0 ? "Ⅱ" : benchFeedbackLeft > 0 && prompt == null ? benchFeedback : "";
+        craftResult.Text = speed == 0 ? "II" : benchFeedbackLeft > 0 && prompt == null ? benchFeedback : "";
         craftResult.AddThemeColorOverride("font_color", speed == 0 ? Cream : benchFeedbackColor);
     }
 }

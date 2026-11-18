@@ -323,7 +323,7 @@ public partial class ShopGame
              "Customers":[{"Appearance":5,"Wanted":0,"Budget":28,"Age":19,"TargetX":1,"TargetY":2}],
              "Orders":[{"Toy":1,"Remaining":3,"Work":3.1}],"Today":{"Visitors":6,"Sold":4,"Revenue":60}}
             """;
-        ShopState run = JsonSerializer.Deserialize<ShopState>(previousFormat)!;
+        ShopState run = JsonSerializer.Deserialize(previousFormat, DaybookJson.Default.ShopState)!;
         run.UpgradeSave();
         Check(run.Cash == 417 && run.Register != null && run.Displays.Count == 2 && run.Day == 4 &&
             run.Customers[0].Position == run.Entry && run.Orders[0].Remaining == 3, "legacy layout and trading migrate");
@@ -337,7 +337,7 @@ public partial class ShopGame
              "Orders":[{"Toy":1,"Remaining":2,"Step":1,"Work":0.7,"PromptIn":0}],
              "Today":{"Requests":[0,0,1,0,0,0,0,0,0,0]}}
             """;
-        run = JsonSerializer.Deserialize<ShopState>(secondFormat)!;
+        run = JsonSerializer.Deserialize(secondFormat, DaybookJson.Default.ShopState)!;
         run.UpgradeSave();
         Check(run.Cash == 463 && run.Prices[Catalog.Engine] == 22 && run.Practice[Catalog.Engine] == 16 &&
             run.Unlocked[Catalog.PebbleDice] && run.Stock[Catalog.PebbleDice] == 5 && run.Today.Requests[2] == 1 &&
@@ -435,7 +435,8 @@ public partial class ShopGame
         run.Unlocked[Catalog.TrainYard] = true;
         run.RentMoreStorage();
         Check(run.Queue(Catalog.TrainYard, 35), "queue larger train yard batch");
-        ShopState fast = JsonSerializer.Deserialize<ShopState>(JsonSerializer.Serialize(run))!;
+        var saveFormat = DaybookJson.Default.ShopState;
+        ShopState fast = JsonSerializer.Deserialize(JsonSerializer.Serialize(run, saveFormat), saveFormat)!;
         Check(fast.UpgradeCart(), "buy bigger cart");
         AdvanceOnePass(run);
         AdvanceOnePass(fast);

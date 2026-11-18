@@ -302,7 +302,7 @@ public partial class ShopGame : Control
         foreach (int rate in Rates)
         {
             int width = rate == 0 ? 62 : 49;
-            Button button = MakeButton(rate == 0 ? "Ⅱ" : $"{rate}×", () =>
+            Button button = MakeButton(rate == 0 ? "II" : $"{rate}×", () =>
             {
                 speed = rate;
                 UpdateReadouts();
@@ -1055,7 +1055,7 @@ public partial class ShopGame : Control
 
             try
             {
-                ShopState? saved = JsonSerializer.Deserialize<ShopState>(File.ReadAllText(location));
+                ShopState? saved = JsonSerializer.Deserialize(File.ReadAllText(location), DaybookJson.Default.ShopState);
                 if (saved != null)
                     return saved;
             }
@@ -1083,11 +1083,13 @@ public partial class ShopGame : Control
         try
         {
             Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-            File.WriteAllText(temp, JsonSerializer.Serialize(progress));
+            File.WriteAllText(temp, JsonSerializer.Serialize(progress, DaybookJson.Default.ShopState));
             if (File.Exists(path))
                 File.Replace(temp, path, path + ".bak", true);
             else
                 File.Move(temp, path);
+            if (OS.HasFeature("web"))
+                JavaScriptBridge.ForceFsSync();
             return true;
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException)
