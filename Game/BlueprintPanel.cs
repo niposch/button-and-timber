@@ -8,6 +8,7 @@ public partial class ShopGame
     private static readonly Vector2[] PadPositions = [new(61, 0), new(122, 61), new(61, 122), new(0, 61)];
     private Control craftPad = null!;
     private Label craftResult = null!;
+    private HBoxContainer padBar = null!;
 
     private void WorkshopPanel()
     {
@@ -92,6 +93,17 @@ public partial class ShopGame
             }, strong: true);
             make.CustomMinimumSize = new Vector2(146, 34);
             batch.AddChild(make);
+            HBoxContainer presets = Row();
+            foreach (int amount in new[] { 1, 5, 10, 25, 50 })
+            {
+                int preset = amount;
+                InButton(presets, $"×{preset}", () =>
+                {
+                    quantity = preset;
+                    units.Text = quantity.ToString();
+                    UpdateReadouts();
+                });
+            }
             Sync(() =>
             {
                 mastery.Text = $"Lv {state.Level(toy)}";
@@ -282,6 +294,21 @@ public partial class ShopGame
             Place(button, new DirectionIcon { Direction = tool, MouseFilter = MouseFilterEnum.Ignore }, 21, 40, 18, 16);
             craftButtons.Add(button);
         }
+        padBar = new HBoxContainer { Visible = false };
+        padBar.AddThemeConstantOverride("separation", 8);
+        host.GetParent().AddChild(padBar);
+        host.GetParent().MoveChild(padBar, host.GetIndex() + 1);
+        foreach (Tool tool in Tools)
+        {
+            Button big = MakeButton("", () => Strike(tool), dark: true);
+            big.CustomMinimumSize = new Vector2(0, 58);
+            big.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+            TextureRect glyph = Icon(tool.ToString(), new Rect2(19, 15, 154, 112));
+            big.AddChild(glyph);
+            glyph.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect, LayoutPresetMode.Minsize, 4);
+            padBar.AddChild(big);
+            craftButtons.Add(big);
+        }
         Rectangle(craftPad, 61, 61, 60, 60, "27433e");
         craftResult = Put(craftPad, "", 61, 62, 60, 58, 25, Light);
         craftResult.HorizontalAlignment = HorizontalAlignment.Center;
@@ -289,16 +316,18 @@ public partial class ShopGame
 
     private void UpdateCraftPad()
     {
-        craftPad.Visible = room == Room.Workshop && !summary && state.Orders.Count > 0;
-        stage.ShowToolPrompt = craftPad.Visible && speed > 0;
-        if (!craftPad.Visible)
+        bool active = room == Room.Workshop && !summary && state.Orders.Count > 0;
+        craftPad.Visible = active && !body.Vertical;
+        padBar.Visible = active && body.Vertical;
+        stage.ShowToolPrompt = active && speed > 0;
+        if (!active)
             return;
 
         Tool? prompt = state.Prompt;
         for (int i = 0; i < craftButtons.Count; i++)
         {
             Button button = craftButtons[i];
-            bool hot = prompt == (Tool)i && speed > 0;
+            bool hot = prompt == (Tool)(i % 4) && speed > 0;
             if (!button.HasMeta("tool_hot") || button.GetMeta("tool_hot").AsBool() != hot)
             {
                 button.SetMeta("tool_hot", hot);

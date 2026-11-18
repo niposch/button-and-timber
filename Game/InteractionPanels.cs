@@ -35,7 +35,7 @@ public partial class ShopGame
         if (!placing.HasValue && selectedDisplay == null)
             Briefing();
         if (placing.HasValue)
-            AddButton("Cancel", CancelPlacement);
+            PlacementControls();
 
         HBoxContainer row = Row();
         foreach (Fixture kind in new[] { Fixture.Display, Fixture.Table, Fixture.Register })
@@ -77,6 +77,15 @@ public partial class ShopGame
             foreach (Display display in state.Displays)
                 DisplayRow(display);
         }
+    }
+
+    private void PlacementControls()
+    {
+        HBoxContainer row = Row();
+        InButton(row, "Rotate", () => RotateFixture()).TooltipText = "Turn the piece a quarter (R)";
+        if (touchMode && pendingCell is Cell spot)
+            InButton(row, "Place here", () => PlaceDisplay(spot));
+        InButton(row, "Cancel", CancelPlacement);
     }
 
     private void FixturePanel(Display item, bool trading)
@@ -235,17 +244,14 @@ public partial class ShopGame
     private void DecorPanel(bool makeOnly = false)
     {
         Header("Decor", placing.HasValue ? "Pick a tile" : Catalog.Seasons[state.Season]);
-        if (!makeOnly)
-            AddButton(placing.HasValue ? "Cancel" : "‹  Layout", () =>
-        {
-            if (placing.HasValue)
-                CancelPlacement();
-            else
+        if (!makeOnly && placing.HasValue)
+            PlacementControls();
+        else if (!makeOnly)
+            AddButton("‹  Layout", () =>
             {
                 showDecor = false;
                 Rebuild();
-            }
-        });
+            });
         foreach (Decoration style in Decorations.All.OrderByDescending(style => style.Season == state.Season))
         {
             bool seasonal = style.Season >= 0;

@@ -10,6 +10,7 @@ public partial class StreetView : Control
     internal Customer? Reading { get; set; }
     internal Fixture? Placement { get; set; }
     internal int PlacementTurn { get; set; }
+    internal Cell? PendingTile { get; set; }
     internal HashSet<Cell> BuildTiles { get; set; } = [];
     internal bool ReducedMotion { get; set; }
     internal bool Paused { get; set; }
@@ -300,7 +301,7 @@ public partial class StreetView : Control
 
         if (Placement.HasValue)
         {
-            Cell hovered = FloorTile(GetLocalMousePosition());
+            Cell hovered = PendingTile ?? FloorTile(GetLocalMousePosition());
             foreach (Cell tile in BuildTiles)
                 Ground(tile.X + .065f, tile.Y + .065f, tile.X + .935f, tile.Y + .935f,
                     tile == hovered ? "ead99b" : "55906e8c");
@@ -338,7 +339,7 @@ public partial class StreetView : Control
             }
         }
 
-        Cell tileUnderPointer = FloorTile(GetLocalMousePosition());
+        Cell tileUnderPointer = PendingTile ?? FloorTile(GetLocalMousePosition());
         if (Placement is Fixture ghost && BuildTiles.Contains(tileUnderPointer))
         {
             Cell spot = tileUnderPointer;

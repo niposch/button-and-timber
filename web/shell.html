@@ -2,11 +2,13 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="theme-color" content="#141f1d">
   <title>$GODOT_PROJECT_NAME</title>
   <style>
-    html, body { margin: 0; overflow: hidden; background: #233330; color: #f9ecd0; }
-    canvas { display: block; outline: none; touch-action: none; }
+    html, body { margin: 0; overflow: hidden; background: #141f1d; color: #f9ecd0; height: 100%; overscroll-behavior: none; -webkit-tap-highlight-color: transparent; -webkit-user-select: none; user-select: none; }
+    canvas { display: block; outline: none; touch-action: none; width: 100vw; height: 100vh; height: 100dvh; }
     #loading { position: fixed; inset: 0; display: grid; place-content: center; gap: 1rem; padding: 1.5rem; text-align: center; font: 16px system-ui, sans-serif; }
     h1 { margin: 0; font: bold 2rem Georgia, serif; }
     progress { width: min(25rem, 80vw); justify-self: center; accent-color: #e6be7f; }
@@ -32,7 +34,7 @@
     async function start() {
       if (!crossOriginIsolated) {
         if (!navigator.serviceWorker || launchUrl.searchParams.has('_isolation')) {
-          throw new Error('Use a current desktop browser with service workers and shared memory enabled.');
+          throw new Error('Use a current browser with service workers and shared memory enabled.');
         }
         await navigator.serviceWorker.register('./isolation.js');
         await navigator.serviceWorker.ready;

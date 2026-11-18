@@ -24,6 +24,9 @@ public partial class ShopGame : Control
     private int speed = 1;
     private bool moving;
     private int placingTurn;
+    private bool touchMode;
+    private bool portraitLayout;
+    private Cell? pendingCell;
     private bool showDecor;
     private bool showWorkshopDecor;
     private Fixture? placing;
@@ -173,6 +176,11 @@ public partial class ShopGame : Control
 
     public override void _Input(InputEvent input)
     {
+        if (input is InputEventScreenTouch or InputEventScreenDrag)
+            touchMode = true;
+        else if (input is InputEventMouse { Device: >= 0 } or InputEventKey)
+            touchMode = false;
+
         if (newCampaign == null || newCampaign.Visible || confirmDiscard.Visible || options.GetPopup().Visible ||
             GetViewport().GuiGetFocusOwner() is LineEdit)
             return;
@@ -578,7 +586,7 @@ public partial class ShopGame : Control
         side.SizeFlagsVertical = portrait ? SizeFlags.ExpandFill : SizeFlags.Fill;
         side.SizeFlagsStretchRatio = 1.5f;
         leftColumn.SizeFlagsStretchRatio = 1;
-        demandBar.Visible = !portrait || size.Y >= 820;
+        portraitLayout = portrait;
         rankBlock.Visible = !portrait;
         daysLeft.Visible = !portrait;
     }
@@ -650,6 +658,17 @@ public partial class ShopGame : Control
     {
         if (placing is not Fixture kind)
             return;
+        if (touchMode && pendingCell != cell)
+        {
+            if (!stage.BuildTiles.Contains(cell))
+                return;
+            pendingCell = cell;
+            stage.PendingTile = cell;
+            status = "Turn it with Rotate, then press Place here.";
+            Play(click, -18);
+            Rebuild(true);
+            return;
+        }
 
         if (moving && selectedDisplay != null)
         {
@@ -663,6 +682,8 @@ public partial class ShopGame : Control
 
         placing = null;
         moving = false;
+        pendingCell = null;
+        stage.PendingTile = null;
         Play(wood, -10);
         Save();
         Rebuild();
@@ -737,6 +758,8 @@ public partial class ShopGame : Control
         moving = relocate;
         placing = kind;
         placingTurn = relocate && selectedDisplay != null ? selectedDisplay.Turn : placingTurn;
+        pendingCell = null;
+        stage.PendingTile = null;
         if (!relocate)
             selectedDisplay = null;
         status = "";
@@ -767,6 +790,8 @@ public partial class ShopGame : Control
     {
         moving = false;
         placing = null;
+        pendingCell = null;
+        stage.PendingTile = null;
         status = "";
         Rebuild();
     }
@@ -981,7 +1006,8 @@ public partial class ShopGame : Control
             (state.Shift == Shift.Open && room == Room.Shop && state.ReadyToPay == null);
         action.Visible = summary || room == Room.Shop || state.Shift == Shift.Closed;
         sideFooter.Visible = action.Visible;
-        spaceKey.Visible = !action.Disabled;
+        demandBar.Visible = !portraitLayout || (room == Room.Shop && Size.Y >= 820);
+        spaceKey.Visible = !action.Disabled && !touchMode;
         ledger.Text = summary ? "Close report" : "Till report";
         ledger.TooltipText = state.Notes.FirstOrDefault() ?? "";
         decorPlans.Visible = room == Room.Workshop && !summary && !showStockroom;
